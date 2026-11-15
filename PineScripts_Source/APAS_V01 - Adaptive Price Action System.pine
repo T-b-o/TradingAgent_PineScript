@@ -1,0 +1,2472 @@
+//@version=6
+strategy(
+     title = "APAS V01.2 — Adaptive Price Action System",
+     shorttitle = "APAS V01.2",
+     overlay = true,
+     initial_capital = 10000,
+     pyramiding = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0,
+     slippage = 0,
+     calc_on_every_tick = false,
+     process_orders_on_close = false,
+     max_boxes_count = 200,
+     max_labels_count = 100)
+
+
+//=============================================================================
+// 01. INPUTS
+//=============================================================================
+
+string GROUP_TF       = "01 — Timeframes"
+string GROUP_ZONES    = "02 — Support and resistance"
+string GROUP_PROFILE  = "03 — S/R visual profile"
+string GROUP_RSI      = "04 — RSI divergence"
+string GROUP_PATTERNS = "05 — Candlestick patterns"
+string GROUP_SESSIONS = "06 — Trading sessions"
+string GROUP_NEWS     = "07 — News blackout"
+string GROUP_RISK     = "08 — Risk and execution"
+
+
+//-----------------------------------------------------------------------------
+// Strategy timeframes
+//-----------------------------------------------------------------------------
+
+string tfTrend = input.timeframe("240", "Primary trend timeframe", group = GROUP_TF)
+string tfSetup = input.timeframe("60", "Setup timeframe", group = GROUP_TF)
+
+int h4Left = input.int(2, "H4 pivot left", minval = 1, maxval = 10, group = GROUP_TF)
+int h4Right = input.int(2, "H4 pivot right", minval = 1, maxval = 10, group = GROUP_TF)
+
+int h1Left = input.int(3, "H1 pivot left", minval = 1, maxval = 10, group = GROUP_TF)
+int h1Right = input.int(3, "H1 pivot right", minval = 1, maxval = 10, group = GROUP_TF)
+
+int m15Left = input.int(2, "M15 pivot left", minval = 1, maxval = 10, group = GROUP_TF)
+int m15Right = input.int(2, "M15 pivot right", minval = 1, maxval = 10, group = GROUP_TF)
+
+int otherLeft = input.int(2, "Other timeframe pivot left", minval = 1, maxval = 10, group = GROUP_TF)
+int otherRight = input.int(2, "Other timeframe pivot right", minval = 1, maxval = 10, group = GROUP_TF)
+
+int dailyLeft = input.int(3, "Daily / higher pivot left", minval = 1, maxval = 10, group = GROUP_TF)
+int dailyRight = input.int(3, "Daily / higher pivot right", minval = 1, maxval = 10, group = GROUP_TF)
+
+int atrLength = input.int(14, "ATR length", minval = 2, group = GROUP_TF)
+
+int minimumScore = input.int(
+     80,
+     "Minimum setup score",
+     minval = 1,
+     maxval = 100,
+     group = GROUP_TF)
+
+
+//-----------------------------------------------------------------------------
+// S/R settings
+//-----------------------------------------------------------------------------
+
+float zoneWidthAtr = input.float(
+     0.25,
+     "Zone width (ATR)",
+     minval = 0.10,
+     maxval = 0.50,
+     step = 0.05,
+     group = GROUP_ZONES)
+
+float zoneTouchAtr = input.float(
+     0.15,
+     "Zone proximity buffer (ATR)",
+     minval = 0,
+     maxval = 1,
+     step = 0.05,
+     group = GROUP_ZONES)
+
+int zoneMaxAgeDays = input.int(
+     30,
+     "Maximum zone age (days)",
+     minval = 1,
+     maxval = 365,
+     group = GROUP_ZONES)
+
+int maxZonesPerSide = input.int(
+     4,
+     "Maximum displayed zones per side",
+     minval = 1,
+     maxval = 10,
+     group = GROUP_ZONES)
+
+
+//-----------------------------------------------------------------------------
+// S/R visual profile settings
+//-----------------------------------------------------------------------------
+
+bool showProfile = input.bool(
+     true,
+     "Show horizontal volume profile",
+     group = GROUP_PROFILE)
+
+bool showLookbackBackground = input.bool(
+     true,
+     "Show profile lookback background",
+     group = GROUP_PROFILE)
+
+bool profileDynamicLookback = input.bool(
+     true,
+     "Use dynamic pivot lookback",
+     group = GROUP_PROFILE,
+     tooltip = "Anchor the profile to the latest confirmed major pivot.")
+
+int profileLookback = input.int(
+     100,
+     "Fixed profile lookback candles",
+     minval = 20,
+     maxval = 500,
+     group = GROUP_PROFILE)
+
+int profileMaxLookback = input.int(
+     500,
+     "Maximum dynamic lookback candles",
+     minval = 100,
+     maxval = 2000,
+     group = GROUP_PROFILE)
+
+int profilePivotPeriod = input.int(
+     200,
+     "Dynamic lookback pivot period",
+     minval = 2,
+     maxval = 500,
+     group = GROUP_PROFILE)
+
+int profileResolution = input.int(
+     40,
+     "Profile resolution",
+     minval = 8,
+     maxval = 50,
+     group = GROUP_PROFILE)
+
+float profileZoneTolerance = input.float(
+     0.93,
+     "S/R zone tolerance",
+     minval = 0.01,
+     maxval = 1.0,
+     step = 0.01,
+     group = GROUP_PROFILE,
+     tooltip = "Lower values mark fewer low-volume profile zones.")
+
+int profileWidthBars = input.int(
+     12,
+     "Maximum profile width",
+     minval = 3,
+     maxval = 40,
+     group = GROUP_PROFILE)
+
+int profileRightOffset = input.int(
+     5,
+     "Profile distance from current candle",
+     minval = 1,
+     maxval = 50,
+     group = GROUP_PROFILE)
+
+color supportColor = input.color(
+     color.rgb(0, 255, 187),
+     "Current support",
+     group = GROUP_PROFILE)
+
+color resistanceColor = input.color(
+     color.rgb(255, 50, 50),
+     "Current resistance",
+     group = GROUP_PROFILE)
+
+color neutralColor = input.color(
+     color.gray,
+     "Other S/R zones and profile",
+     group = GROUP_PROFILE)
+
+
+//-----------------------------------------------------------------------------
+// RSI divergence
+//-----------------------------------------------------------------------------
+
+int rsiLength = input.int(14, "RSI length", minval = 2, group = GROUP_RSI)
+
+int divLeft = input.int(3, "Divergence pivot left", minval = 1, maxval = 10, group = GROUP_RSI)
+int divRight = input.int(3, "Divergence pivot right", minval = 1, maxval = 10, group = GROUP_RSI)
+
+int divMinBars = input.int(5, "Minimum pivot separation", minval = 1, maxval = 100, group = GROUP_RSI)
+int divMaxBars = input.int(30, "Maximum pivot separation", minval = 2, maxval = 200, group = GROUP_RSI)
+
+int divActiveBars = input.int(
+     20,
+     "Divergence remains active (M15 bars)",
+     minval = 1,
+     maxval = 100,
+     group = GROUP_RSI)
+
+
+//-----------------------------------------------------------------------------
+// Candlestick patterns
+//-----------------------------------------------------------------------------
+
+bool showPatterns = input.bool(
+     false,
+     "Show candle labels at current S/R only",
+     group = GROUP_PATTERNS)
+
+
+//-----------------------------------------------------------------------------
+// Trading sessions
+//-----------------------------------------------------------------------------
+
+string londonSession = input.session(
+     "0800-1700:23456",
+     "London local time",
+     group = GROUP_SESSIONS)
+
+string newYorkSession = input.session(
+     "0800-1700:23456",
+     "New York local time",
+     group = GROUP_SESSIONS)
+
+bool useLondon = input.bool(true, "Enable London", group = GROUP_SESSIONS)
+bool useNewYork = input.bool(true, "Enable New York", group = GROUP_SESSIONS)
+
+
+//-----------------------------------------------------------------------------
+// Manual news blackout
+//-----------------------------------------------------------------------------
+
+bool news1Enabled = input.bool(false, "Enable blackout 1", inline = "N1", group = GROUP_NEWS)
+int news1Start = input.time(timestamp("01 Jan 1970 00:00 +0000"), "Start", inline = "N1", group = GROUP_NEWS)
+int news1End = input.time(timestamp("01 Jan 1970 00:00 +0000"), "End", inline = "N1", group = GROUP_NEWS)
+
+bool news2Enabled = input.bool(false, "Enable blackout 2", inline = "N2", group = GROUP_NEWS)
+int news2Start = input.time(timestamp("01 Jan 1970 00:00 +0000"), "Start", inline = "N2", group = GROUP_NEWS)
+int news2End = input.time(timestamp("01 Jan 1970 00:00 +0000"), "End", inline = "N2", group = GROUP_NEWS)
+
+bool news3Enabled = input.bool(false, "Enable blackout 3", inline = "N3", group = GROUP_NEWS)
+int news3Start = input.time(timestamp("01 Jan 1970 00:00 +0000"), "Start", inline = "N3", group = GROUP_NEWS)
+int news3End = input.time(timestamp("01 Jan 1970 00:00 +0000"), "End", inline = "N3", group = GROUP_NEWS)
+
+bool news4Enabled = input.bool(false, "Enable blackout 4", inline = "N4", group = GROUP_NEWS)
+int news4Start = input.time(timestamp("01 Jan 1970 00:00 +0000"), "Start", inline = "N4", group = GROUP_NEWS)
+int news4End = input.time(timestamp("01 Jan 1970 00:00 +0000"), "End", inline = "N4", group = GROUP_NEWS)
+
+
+//-----------------------------------------------------------------------------
+// Risk and execution
+//-----------------------------------------------------------------------------
+
+float riskPercent = input.float(
+     1.0,
+     "Risk per trade (%)",
+     minval = 0.1,
+     maxval = 5,
+     step = 0.1,
+     group = GROUP_RISK) / 100.0
+
+float dailyLossPercent = input.float(
+     2.0,
+     "Daily loss limit (%)",
+     minval = 0.5,
+     maxval = 10,
+     step = 0.1,
+     group = GROUP_RISK) / 100.0
+
+bool closeAtDailyLimit = input.bool(
+     true,
+     "Close open position at daily loss limit",
+     group = GROUP_RISK)
+
+float stopBufferAtr = input.float(
+     0.10,
+     "Stop buffer (ATR)",
+     minval = 0,
+     maxval = 1,
+     step = 0.05,
+     group = GROUP_RISK)
+
+float quantityStep = input.float(
+     1000,
+     "Quantity rounding step",
+     minval = 1,
+     step = 1,
+     group = GROUP_RISK)
+
+float maximumQuantity = input.float(
+     1000000,
+     "Maximum quantity",
+     minval = 1,
+     step = 1000,
+     group = GROUP_RISK)
+
+string takeProfitMode = input.string(
+     "TP-A: Fixed 1:2",
+     "Take-profit comparison",
+     options = [
+         "TP-A: Fixed 1:2",
+         "TP-B: Next opposing zone",
+         "TP-C: 50% at 1R / 50% at 2R"
+     ],
+     group = GROUP_RISK)
+
+float fixedRewardRisk = input.float(
+     2.0,
+     "Fixed reward / risk",
+     minval = 0.5,
+     maxval = 10,
+     step = 0.25,
+     group = GROUP_RISK)
+
+
+//=============================================================================
+// 02. FUNCTIONS
+//=============================================================================
+
+// Calculates confirmed market structure on the requested timeframe.
+// Returns the previous completed candle's values to avoid using
+// developing higher-timeframe values.
+
+f_structure(int leftBars, int rightBars) =>
+
+    var float previousHigh = na
+    var float latestHigh = na
+
+    var float previousLow = na
+    var float latestLow = na
+
+    var int latestHighTime = na
+    var int latestLowTime = na
+
+    float newHigh = ta.pivothigh(high, leftBars, rightBars)
+    float newLow = ta.pivotlow(low, leftBars, rightBars)
+
+    if not na(newHigh)
+        previousHigh := latestHigh
+        latestHigh := newHigh
+        latestHighTime := time[rightBars]
+
+    if not na(newLow)
+        previousLow := latestLow
+        latestLow := newLow
+        latestLowTime := time[rightBars]
+
+    bool bullishStructure =
+         not na(previousHigh) and
+         not na(latestHigh) and
+         not na(previousLow) and
+         not na(latestLow) and
+         latestHigh > previousHigh and
+         latestLow > previousLow
+
+    bool bearishStructure =
+         not na(previousHigh) and
+         not na(latestHigh) and
+         not na(previousLow) and
+         not na(latestLow) and
+         latestHigh < previousHigh and
+         latestLow < previousLow
+
+    int direction =
+         bullishStructure ? 1 :
+         bearishStructure ? -1 :
+         0
+
+    float atrValue = ta.atr(atrLength)
+
+    [
+         direction[1],
+         latestHigh[1],
+         latestLow[1],
+         latestHighTime[1],
+         latestLowTime[1],
+         atrValue[1]
+    ]
+
+
+// Converts market structure into readable text.
+f_trendText(int direction) =>
+    direction == 1 ? "Bullish" :
+     direction == -1 ? "Bearish" :
+     "Unclear"
+
+
+// Checks whether a candle interacts with a zone or its buffer.
+f_zoneTouch(
+     float zoneTop,
+     float zoneBottom,
+     float atrValue,
+     float bufferAtr) =>
+
+    not na(zoneTop) and
+     not na(zoneBottom) and
+     not na(atrValue) and
+     low <= zoneTop + atrValue * bufferAtr and
+     high >= zoneBottom - atrValue * bufferAtr
+
+
+// Checks whether a candle overlaps a manual news blackout interval.
+f_inNewsWindow(bool enabled, int startTime, int endTime) =>
+    enabled and
+     endTime > startTime and
+     time <= endTime and
+     time_close >= startTime
+
+
+// Finds the closest opposing supply level above price.
+f_nearestAbove(
+     float priceA,
+     float priceB,
+     float priceC,
+     float referencePrice) =>
+
+    float result = na
+
+    if not na(priceA) and priceA > referencePrice
+        result := priceA
+
+    if not na(priceB) and priceB > referencePrice and (na(result) or priceB < result)
+        result := priceB
+
+    if not na(priceC) and priceC > referencePrice and (na(result) or priceC < result)
+        result := priceC
+
+    result
+
+
+// Finds the closest opposing demand level below price.
+f_nearestBelow(
+     float priceA,
+     float priceB,
+     float priceC,
+     float referencePrice) =>
+
+    float result = na
+
+    if not na(priceA) and priceA < referencePrice
+        result := priceA
+
+    if not na(priceB) and priceB < referencePrice and (na(result) or priceB > result)
+        result := priceB
+
+    if not na(priceC) and priceC < referencePrice and (na(result) or priceC > result)
+        result := priceC
+
+    result
+
+
+// Detects bullish candlestick patterns.
+// Detection is separate from the decision to display labels.
+
+f_bullPatternName() =>
+
+    float candleRange = math.max(high - low, syminfo.mintick)
+    float body = math.abs(close - open)
+
+    float upperWick = high - math.max(open, close)
+    float lowerWick = math.min(open, close) - low
+
+    bool hammer =
+         lowerWick >= body * 2.0 and
+         upperWick <= body * 0.5 and
+         close >= low + candleRange * 0.65 and
+         body >= candleRange * 0.10
+
+    bool invertedHammer =
+         upperWick >= body * 2.0 and
+         lowerWick <= body * 0.5 and
+         close >= low + candleRange * 0.50 and
+         body >= candleRange * 0.10
+
+    bool bullishEngulfing =
+         close[1] < open[1] and
+         close > open and
+         open <= close[1] and
+         close >= open[1]
+
+    bool morningStar =
+         close[2] < open[2] and
+         math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and
+         close > open and
+         close > (open[2] + close[2]) * 0.5
+
+    bool piercingLine =
+         close[1] < open[1] and
+         close > open and
+         open <= close[1] and
+         close > (open[1] + close[1]) * 0.5 and
+         close < open[1]
+
+    bool marubozu =
+         close > open and
+         body >= candleRange * 0.90 and
+         close >= high - candleRange * 0.10
+
+    string result = ""
+
+    if bullishEngulfing
+        result := "Bullish Engulfing"
+    else if morningStar
+        result := "Morning Star"
+    else if piercingLine
+        result := "Piercing Line"
+    else if hammer
+        result := "Hammer"
+    else if invertedHammer
+        result := "Inverted Hammer"
+    else if marubozu
+        result := "Bull Marubozu"
+
+    result
+
+
+// Detects bearish candlestick patterns.
+
+f_bearPatternName() =>
+
+    float candleRange = math.max(high - low, syminfo.mintick)
+    float body = math.abs(close - open)
+
+    float upperWick = high - math.max(open, close)
+    float lowerWick = math.min(open, close) - low
+
+    bool shootingStar =
+         upperWick >= body * 2.0 and
+         lowerWick <= body * 0.5 and
+         close <= low + candleRange * 0.35 and
+         body >= candleRange * 0.10
+
+    bool hangingMan =
+         lowerWick >= body * 2.0 and
+         upperWick <= body * 0.5 and
+         close <= low + candleRange * 0.50 and
+         body >= candleRange * 0.10
+
+    bool bearishEngulfing =
+         close[1] > open[1] and
+         close < open and
+         open >= close[1] and
+         close <= open[1]
+
+    bool eveningStar =
+         close[2] > open[2] and
+         math.abs(close[1] - open[1]) <= math.abs(close[2] - open[2]) * 0.5 and
+         close < open and
+         close < (open[2] + close[2]) * 0.5
+
+    bool darkCloud =
+         close[1] > open[1] and
+         close < open and
+         open >= close[1] and
+         close < (open[1] + close[1]) * 0.5 and
+         close > open[1]
+
+    bool marubozu =
+         close < open and
+         body >= candleRange * 0.90 and
+         close <= low + candleRange * 0.10
+
+    string result = ""
+
+    if bearishEngulfing
+        result := "Bearish Engulfing"
+    else if eveningStar
+        result := "Evening Star"
+    else if darkCloud
+        result := "Dark Cloud Cover"
+    else if shootingStar
+        result := "Shooting Star"
+    else if hangingMan
+        result := "Hanging Man"
+    else if marubozu
+        result := "Bear Marubozu"
+
+    result
+
+
+// Dashboard cell helper.
+f_tableCell(
+     table tableId,
+     int column,
+     int row,
+     string cellText,
+     color cellBg,
+     color cellTextColor) =>
+
+    table.cell(
+         tableId,
+         column,
+         row,
+         cellText,
+         bgcolor = cellBg,
+         text_color = cellTextColor,
+         text_size = size.small)
+
+
+// Dashboard pass/fail colour.
+f_statusColor(bool passed) =>
+    passed ? color.new(color.green, 75) : color.new(color.red, 82)
+
+
+//=============================================================================
+// 03. CHART TIMEFRAME AND STRATEGY CONTEXT
+//=============================================================================
+
+// The chart can now use any timeframe.
+// APAS trading entries are still restricted to M15.
+
+int chartTfSeconds = timeframe.in_seconds()
+
+bool isM15Chart = chartTfSeconds == 900
+
+bool supportedPair =
+     syminfo.type == "forex" and
+     (
+         (syminfo.basecurrency == "EUR" and syminfo.currency == "USD") or
+         (syminfo.basecurrency == "GBP" and syminfo.currency == "USD")
+     )
+
+// Select pivot sensitivity for the active chart timeframe.
+int chartPivotLeft =
+     chartTfSeconds >= 86400 ? dailyLeft :
+     chartTfSeconds >= 14400 ? h4Left :
+     chartTfSeconds >= 3600 ? h1Left :
+     chartTfSeconds >= 900 ? m15Left :
+     otherLeft
+
+int chartPivotRight =
+     chartTfSeconds >= 86400 ? dailyRight :
+     chartTfSeconds >= 14400 ? h4Right :
+     chartTfSeconds >= 3600 ? h1Right :
+     chartTfSeconds >= 900 ? m15Right :
+     otherRight
+
+
+// Strategy timeframes must remain correctly ordered.
+// This validates the strategy inputs, not the chart timeframe.
+if barstate.isfirst and
+     timeframe.in_seconds(tfTrend) <= timeframe.in_seconds(tfSetup)
+
+    runtime.error("The primary trend timeframe must be higher than the setup timeframe.")
+
+
+//=============================================================================
+// 04. MARKET DATA
+//=============================================================================
+
+float atr = ta.atr(atrLength)
+float rsi = ta.rsi(close, rsiLength)
+
+// H4 structure.
+[
+     h4Trend,
+     h4SwingHigh,
+     h4SwingLow,
+     h4HighTime,
+     h4LowTime,
+     h4Atr
+] = request.security(
+     syminfo.tickerid,
+     tfTrend,
+     f_structure(h4Left, h4Right),
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// H1 structure.
+[
+     h1Trend,
+     h1SwingHigh,
+     h1SwingLow,
+     h1HighTime,
+     h1LowTime,
+     h1Atr
+] = request.security(
+     syminfo.tickerid,
+     tfSetup,
+     f_structure(h1Left, h1Right),
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+// Previous completed day levels.
+float previousDayHigh = request.security(
+     syminfo.tickerid,
+     "D",
+     high[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+float previousDayLow = request.security(
+     syminfo.tickerid,
+     "D",
+     low[1],
+     gaps = barmerge.gaps_off,
+     lookahead = barmerge.lookahead_on)
+
+
+//=============================================================================
+// 05. STRATEGY S/R — INTERNAL CALCULATIONS
+//=============================================================================
+
+// These H4/H1 zones are retained for strategy scoring.
+// They are deliberately NOT drawn on the chart.
+//
+// The chart has its own active-timeframe S/R display in section 06.
+
+var float h4DemandTop = na
+var float h4DemandBottom = na
+var float h4SupplyTop = na
+var float h4SupplyBottom = na
+
+var float h1DemandTop = na
+var float h1DemandBottom = na
+var float h1SupplyTop = na
+var float h1SupplyBottom = na
+
+var int h4DemandTime = na
+var int h4SupplyTime = na
+var int h1DemandTime = na
+var int h1SupplyTime = na
+
+var int processedH4LowTime = na
+var int processedH4HighTime = na
+var int processedH1LowTime = na
+var int processedH1HighTime = na
+
+var bool h4DemandInvalidated = false
+var bool h4SupplyInvalidated = false
+var bool h1DemandInvalidated = false
+var bool h1SupplyInvalidated = false
+
+
+// H4 demand.
+if not na(h4LowTime) and
+     (na(processedH4LowTime) or h4LowTime != processedH4LowTime) and
+     not na(h4Atr)
+
+    processedH4LowTime := h4LowTime
+
+    float halfWidth = math.max(syminfo.mintick, h4Atr * zoneWidthAtr * 0.5)
+
+    h4DemandTop := h4SwingLow + halfWidth
+    h4DemandBottom := h4SwingLow - halfWidth
+    h4DemandTime := h4LowTime
+    h4DemandInvalidated := false
+
+
+// H4 supply.
+if not na(h4HighTime) and
+     (na(processedH4HighTime) or h4HighTime != processedH4HighTime) and
+     not na(h4Atr)
+
+    processedH4HighTime := h4HighTime
+
+    float halfWidth = math.max(syminfo.mintick, h4Atr * zoneWidthAtr * 0.5)
+
+    h4SupplyTop := h4SwingHigh + halfWidth
+    h4SupplyBottom := h4SwingHigh - halfWidth
+    h4SupplyTime := h4HighTime
+    h4SupplyInvalidated := false
+
+
+// H1 demand.
+if not na(h1LowTime) and
+     (na(processedH1LowTime) or h1LowTime != processedH1LowTime) and
+     not na(h1Atr)
+
+    processedH1LowTime := h1LowTime
+
+    float halfWidth = math.max(syminfo.mintick, h1Atr * zoneWidthAtr * 0.5)
+
+    h1DemandTop := h1SwingLow + halfWidth
+    h1DemandBottom := h1SwingLow - halfWidth
+    h1DemandTime := h1LowTime
+    h1DemandInvalidated := false
+
+
+// H1 supply.
+if not na(h1HighTime) and
+     (na(processedH1HighTime) or h1HighTime != processedH1HighTime) and
+     not na(h1Atr)
+
+    processedH1HighTime := h1HighTime
+
+    float halfWidth = math.max(syminfo.mintick, h1Atr * zoneWidthAtr * 0.5)
+
+    h1SupplyTop := h1SwingHigh + halfWidth
+    h1SupplyBottom := h1SwingHigh - halfWidth
+    h1SupplyTime := h1HighTime
+    h1SupplyInvalidated := false
+
+
+// Strategy-zone invalidation and expiry.
+int maximumZoneAgeMs = zoneMaxAgeDays * 24 * 60 * 60 * 1000
+
+if not h4DemandInvalidated and not na(h4DemandTime) and
+     (close < h4DemandBottom or time - h4DemandTime > maximumZoneAgeMs)
+
+    h4DemandInvalidated := true
+
+if not h4SupplyInvalidated and not na(h4SupplyTime) and
+     (close > h4SupplyTop or time - h4SupplyTime > maximumZoneAgeMs)
+
+    h4SupplyInvalidated := true
+
+if not h1DemandInvalidated and not na(h1DemandTime) and
+     (close < h1DemandBottom or time - h1DemandTime > maximumZoneAgeMs)
+
+    h1DemandInvalidated := true
+
+if not h1SupplyInvalidated and not na(h1SupplyTime) and
+     (close > h1SupplyTop or time - h1SupplyTime > maximumZoneAgeMs)
+
+    h1SupplyInvalidated := true
+
+
+bool h4DemandActive = not na(h4DemandTime) and not h4DemandInvalidated
+bool h4SupplyActive = not na(h4SupplyTime) and not h4SupplyInvalidated
+bool h1DemandActive = not na(h1DemandTime) and not h1DemandInvalidated
+bool h1SupplyActive = not na(h1SupplyTime) and not h1SupplyInvalidated
+
+
+// Strategy S/R proximity.
+// Used internally for scoring, not for chart labels.
+bool nearStrategyDemand =
+     (
+         h4DemandActive and
+         f_zoneTouch(h4DemandTop, h4DemandBottom, atr, zoneTouchAtr)
+     ) or
+     (
+         h1DemandActive and
+         f_zoneTouch(h1DemandTop, h1DemandBottom, atr, zoneTouchAtr)
+     ) or
+     (
+         not na(previousDayLow) and
+         low <= previousDayLow + atr * zoneTouchAtr and
+         high >= previousDayLow - atr * zoneTouchAtr
+     )
+
+bool nearStrategySupply =
+     (
+         h4SupplyActive and
+         f_zoneTouch(h4SupplyTop, h4SupplyBottom, atr, zoneTouchAtr)
+     ) or
+     (
+         h1SupplyActive and
+         f_zoneTouch(h1SupplyTop, h1SupplyBottom, atr, zoneTouchAtr)
+     ) or
+     (
+         not na(previousDayHigh) and
+         low <= previousDayHigh + atr * zoneTouchAtr and
+         high >= previousDayHigh - atr * zoneTouchAtr
+     )
+
+
+//=============================================================================
+// 06. DYNAMIC CHART-TIMEFRAME S/R
+//=============================================================================
+
+// These zones are detected on the active chart timeframe.
+//
+// Examples:
+// M15 chart -> M15 swing zones.
+// H1 chart  -> H1 swing zones.
+// H4 chart  -> H4 swing zones.
+//
+// Historical zones are subdued.
+// The closest active support and resistance are highlighted.
+
+float chartAtr = ta.atr(atrLength)
+
+float chartPivotHigh = ta.pivothigh(
+     high,
+     chartPivotLeft,
+     chartPivotRight)
+
+float chartPivotLow = ta.pivotlow(
+     low,
+     chartPivotLeft,
+     chartPivotRight)
+
+
+// Support zone arrays.
+var array<box> supportBoxes = array.new_box()
+var array<float> supportTops = array.new_float()
+var array<float> supportBottoms = array.new_float()
+var array<int> supportTimes = array.new_int()
+var array<bool> supportActive = array.new_bool()
+
+// Resistance zone arrays.
+var array<box> resistanceBoxes = array.new_box()
+var array<float> resistanceTops = array.new_float()
+var array<float> resistanceBottoms = array.new_float()
+var array<int> resistanceTimes = array.new_int()
+var array<bool> resistanceActive = array.new_bool()
+
+
+//-----------------------------------------------------------------------------
+// Create a support zone from a confirmed chart-timeframe swing low.
+//-----------------------------------------------------------------------------
+
+if not na(chartPivotLow) and not na(chartAtr[chartPivotRight])
+
+    float pivotAtr = chartAtr[chartPivotRight]
+    float halfWidth = math.max(syminfo.mintick, pivotAtr * zoneWidthAtr * 0.5)
+
+    float zoneTop = chartPivotLow + halfWidth
+    float zoneBottom = chartPivotLow - halfWidth
+
+    box newSupportBox = box.new(
+         left = time[chartPivotRight],
+         top = zoneTop,
+         right = time,
+         bottom = zoneBottom,
+         xloc = xloc.bar_time,
+         extend = extend.right,
+         border_color = color.new(neutralColor, 65),
+         bgcolor = color.new(neutralColor, 92))
+
+    array.push(supportBoxes, newSupportBox)
+    array.push(supportTops, zoneTop)
+    array.push(supportBottoms, zoneBottom)
+    array.push(supportTimes, time[chartPivotRight])
+    array.push(supportActive, true)
+
+    // Keep the number of displayed historical support zones limited.
+    if array.size(supportBoxes) > maxZonesPerSide
+
+        box oldestBox = array.shift(supportBoxes)
+        box.delete(oldestBox)
+
+        array.shift(supportTops)
+        array.shift(supportBottoms)
+        array.shift(supportTimes)
+        array.shift(supportActive)
+
+
+//-----------------------------------------------------------------------------
+// Create a resistance zone from a confirmed chart-timeframe swing high.
+//-----------------------------------------------------------------------------
+
+if not na(chartPivotHigh) and not na(chartAtr[chartPivotRight])
+
+    float pivotAtr = chartAtr[chartPivotRight]
+    float halfWidth = math.max(syminfo.mintick, pivotAtr * zoneWidthAtr * 0.5)
+
+    float zoneTop = chartPivotHigh + halfWidth
+    float zoneBottom = chartPivotHigh - halfWidth
+
+    box newResistanceBox = box.new(
+         left = time[chartPivotRight],
+         top = zoneTop,
+         right = time,
+         bottom = zoneBottom,
+         xloc = xloc.bar_time,
+         extend = extend.right,
+         border_color = color.new(neutralColor, 65),
+         bgcolor = color.new(neutralColor, 92))
+
+    array.push(resistanceBoxes, newResistanceBox)
+    array.push(resistanceTops, zoneTop)
+    array.push(resistanceBottoms, zoneBottom)
+    array.push(resistanceTimes, time[chartPivotRight])
+    array.push(resistanceActive, true)
+
+    // Keep the number of displayed historical resistance zones limited.
+    if array.size(resistanceBoxes) > maxZonesPerSide
+
+        box oldestBox = array.shift(resistanceBoxes)
+        box.delete(oldestBox)
+
+        array.shift(resistanceTops)
+        array.shift(resistanceBottoms)
+        array.shift(resistanceTimes)
+        array.shift(resistanceActive)
+
+
+//-----------------------------------------------------------------------------
+// Invalidate broken or expired chart-timeframe zones.
+//-----------------------------------------------------------------------------
+
+if array.size(supportBoxes) > 0
+
+    for i = 0 to array.size(supportBoxes) - 1
+
+        if array.get(supportActive, i)
+
+            float zoneBottom = array.get(supportBottoms, i)
+            int createdTime = array.get(supportTimes, i)
+
+            bool broken = close < zoneBottom
+            bool expired = time - createdTime > maximumZoneAgeMs
+
+            if broken or expired
+
+                array.set(supportActive, i, false)
+
+                box zoneBox = array.get(supportBoxes, i)
+
+                box.set_extend(zoneBox, extend.none)
+                box.set_right(zoneBox, time)
+
+
+if array.size(resistanceBoxes) > 0
+
+    for i = 0 to array.size(resistanceBoxes) - 1
+
+        if array.get(resistanceActive, i)
+
+            float zoneTop = array.get(resistanceTops, i)
+            int createdTime = array.get(resistanceTimes, i)
+
+            bool broken = close > zoneTop
+            bool expired = time - createdTime > maximumZoneAgeMs
+
+            if broken or expired
+
+                array.set(resistanceActive, i, false)
+
+                box zoneBox = array.get(resistanceBoxes, i)
+
+                box.set_extend(zoneBox, extend.none)
+                box.set_right(zoneBox, time)
+
+
+//-----------------------------------------------------------------------------
+// Find the nearest active support zone.
+//-----------------------------------------------------------------------------
+
+int currentSupportIndex = -1
+float bestSupportDistance = na
+
+if array.size(supportBoxes) > 0
+
+    for i = 0 to array.size(supportBoxes) - 1
+
+        if array.get(supportActive, i)
+
+            float zoneTop = array.get(supportTops, i)
+            float zoneBottom = array.get(supportBottoms, i)
+
+            float distance =
+                 close > zoneTop ? close - zoneTop :
+                 close >= zoneBottom ? 0.0 :
+                 na
+
+            if not na(distance) and
+                 (na(bestSupportDistance) or distance < bestSupportDistance)
+
+                bestSupportDistance := distance
+                currentSupportIndex := i
+
+
+//-----------------------------------------------------------------------------
+// Find the nearest active resistance zone.
+//-----------------------------------------------------------------------------
+
+int currentResistanceIndex = -1
+float bestResistanceDistance = na
+
+if array.size(resistanceBoxes) > 0
+
+    for i = 0 to array.size(resistanceBoxes) - 1
+
+        if array.get(resistanceActive, i)
+
+            float zoneTop = array.get(resistanceTops, i)
+            float zoneBottom = array.get(resistanceBottoms, i)
+
+            float distance =
+                 close < zoneBottom ? zoneBottom - close :
+                 close <= zoneTop ? 0.0 :
+                 na
+
+            if not na(distance) and
+                 (na(bestResistanceDistance) or distance < bestResistanceDistance)
+
+                bestResistanceDistance := distance
+                currentResistanceIndex := i
+
+
+//-----------------------------------------------------------------------------
+// Highlight current S/R and keep other zones subdued.
+//-----------------------------------------------------------------------------
+
+if array.size(supportBoxes) > 0
+
+    for i = 0 to array.size(supportBoxes) - 1
+
+        box zoneBox = array.get(supportBoxes, i)
+
+        bool active = array.get(supportActive, i)
+        bool current = i == currentSupportIndex
+
+        color zoneBg =
+             not active ? color.new(neutralColor, 96) :
+             current ? color.new(supportColor, 84) :
+             color.new(neutralColor, 93)
+
+        color zoneBorder =
+             not active ? color.new(neutralColor, 100) :
+             current ? color.new(supportColor, 0) :
+             color.new(neutralColor, 72)
+
+        box.set_bgcolor(zoneBox, zoneBg)
+        box.set_border_color(zoneBox, zoneBorder)
+        box.set_border_width(zoneBox, current ? 2 : 1)
+
+
+if array.size(resistanceBoxes) > 0
+
+    for i = 0 to array.size(resistanceBoxes) - 1
+
+        box zoneBox = array.get(resistanceBoxes, i)
+
+        bool active = array.get(resistanceActive, i)
+        bool current = i == currentResistanceIndex
+
+        color zoneBg =
+             not active ? color.new(neutralColor, 96) :
+             current ? color.new(resistanceColor, 84) :
+             color.new(neutralColor, 93)
+
+        color zoneBorder =
+             not active ? color.new(neutralColor, 100) :
+             current ? color.new(resistanceColor, 0) :
+             color.new(neutralColor, 72)
+
+        box.set_bgcolor(zoneBox, zoneBg)
+        box.set_border_color(zoneBox, zoneBorder)
+        box.set_border_width(zoneBox, current ? 2 : 1)
+
+
+//-----------------------------------------------------------------------------
+// Current chart S/R price levels and proximity.
+//-----------------------------------------------------------------------------
+
+float currentSupportTop =
+     currentSupportIndex >= 0 ?
+     array.get(supportTops, currentSupportIndex) :
+     na
+
+float currentSupportBottom =
+     currentSupportIndex >= 0 ?
+     array.get(supportBottoms, currentSupportIndex) :
+     na
+
+float currentResistanceTop =
+     currentResistanceIndex >= 0 ?
+     array.get(resistanceTops, currentResistanceIndex) :
+     na
+
+float currentResistanceBottom =
+     currentResistanceIndex >= 0 ?
+     array.get(resistanceBottoms, currentResistanceIndex) :
+     na
+
+bool currentSupportTouched =
+     currentSupportIndex >= 0 and
+     f_zoneTouch(
+         currentSupportTop,
+         currentSupportBottom,
+         chartAtr,
+         zoneTouchAtr)
+
+bool currentResistanceTouched =
+     currentResistanceIndex >= 0 and
+     f_zoneTouch(
+         currentResistanceTop,
+         currentResistanceBottom,
+         chartAtr,
+         zoneTouchAtr)
+
+
+//=============================================================================
+// 07. OPTIONAL ALGOALPHA-STYLE PROFILE VISUAL
+//=============================================================================
+
+// This profile is for visual context only and does not influence entry scoring.
+// Forex volume is commonly tick volume and depends on the data feed.
+
+float profilePivotHigh = ta.pivothigh(high, profilePivotPeriod, profilePivotPeriod)
+float profilePivotLow = ta.pivotlow(low, profilePivotPeriod, profilePivotPeriod)
+
+var int profilePivotBar = na
+
+if not na(profilePivotHigh) or not na(profilePivotLow)
+    profilePivotBar := bar_index - profilePivotPeriod
+
+int barsSinceProfilePivot =
+     na(profilePivotBar) ? profileLookback :
+     bar_index - profilePivotBar + 1
+
+int requestedProfileBars =
+     profileDynamicLookback ?
+     math.min(barsSinceProfilePivot, profileMaxLookback) :
+     profileLookback
+
+int profileBarsUsed = math.min(requestedProfileBars, bar_index + 1)
+int profileLeftBar = bar_index - profileBarsUsed + 1
+
+var array<box> profileBoxes = array.new_box()
+var array<label> profileZoneLabels = array.new_label()
+var box profileBackgroundBox = na
+
+if barstate.islast
+
+    // Delete the previous profile drawings before rebuilding them.
+    while array.size(profileBoxes) > 0
+
+        box oldProfileBox = array.pop(profileBoxes)
+        box.delete(oldProfileBox)
+
+    while array.size(profileZoneLabels) > 0
+
+        label oldProfileLabel = array.pop(profileZoneLabels)
+        label.delete(oldProfileLabel)
+
+    if not na(profileBackgroundBox)
+        box.delete(profileBackgroundBox)
+        profileBackgroundBox := na
+
+    if showProfile and profileBarsUsed > 0
+
+        float profileRangeHigh = high
+        float profileRangeLow = low
+
+        for j = 1 to profileBarsUsed - 1
+
+            profileRangeHigh := math.max(profileRangeHigh, high[j])
+            profileRangeLow := math.min(profileRangeLow, low[j])
+
+        if profileRangeHigh > profileRangeLow
+
+            float profileStep =
+                 (profileRangeHigh - profileRangeLow) / profileResolution
+
+            array<float> profileVolumes =
+                 array.new_float(profileResolution, 0.0)
+
+            // Count each candle's volume in every price bin it intersects.
+            for i = 0 to profileResolution - 1
+
+                float binBottom = profileRangeLow + profileStep * i
+                float binTop = profileRangeLow + profileStep * (i + 1)
+                float binVolume = 0.0
+
+                for j = 0 to profileBarsUsed - 1
+
+                    if low[j] <= binTop and high[j] >= binBottom
+                        binVolume += nz(volume[j], 0.0)
+
+                array.set(profileVolumes, i, binVolume)
+
+
+            float maximumProfileVolume = array.max(profileVolumes)
+
+            if showLookbackBackground
+
+                profileBackgroundBox := box.new(
+                     left = profileLeftBar,
+                     top = profileRangeHigh,
+                     right = bar_index,
+                     bottom = profileRangeLow,
+                     xloc = xloc.bar_index,
+                     extend = extend.none,
+                     border_color = color.new(color.blue, 100),
+                     bgcolor = color.new(color.blue, 92),
+                     text = "Total Look-Back Data",
+                     text_color = color.new(color.gray, 15),
+                     text_size = size.tiny,
+                     text_halign = text.align_center,
+                     text_valign = text.align_top)
+
+
+            if maximumProfileVolume > 0
+
+                int profileRight =
+                     bar_index + profileRightOffset + profileWidthBars
+
+                for i = 0 to profileResolution - 1
+
+                    float binVolume = array.get(profileVolumes, i)
+                    float binBottom = profileRangeLow + profileStep * i
+                    float binTop = profileRangeLow + profileStep * (i + 1)
+                    float binMidpoint = math.avg(binBottom, binTop)
+
+                    bool isZone =
+                         (i == profileResolution - 1 or
+                          binVolume < array.get(profileVolumes, i + 1) * profileZoneTolerance) and
+                         (i == 0 or
+                          binVolume < array.get(profileVolumes, i - 1) * profileZoneTolerance)
+
+                    if isZone
+
+                        color zoneColor =
+                             binMidpoint <= close ? supportColor : resistanceColor
+
+                        box profileZone = box.new(
+                             left = profileLeftBar,
+                             top = binTop,
+                             right = bar_index,
+                             bottom = binBottom,
+                             xloc = xloc.bar_index,
+                             extend = extend.none,
+                             border_color = color.new(zoneColor, 15),
+                             bgcolor = color.new(zoneColor, 58))
+
+                        array.push(profileBoxes, profileZone)
+
+                        string zoneStrength = str.tostring(
+                             1.0 - binVolume / maximumProfileVolume,
+                             format.percent)
+
+                        label zoneLabel = label.new(
+                             x = profileLeftBar,
+                             y = math.avg(binTop, binBottom),
+                             text = zoneStrength,
+                             color = chart.fg_color,
+                             textcolor = chart.bg_color,
+                             style = label.style_label_right,
+                             size = size.small)
+
+                        array.push(profileZoneLabels, zoneLabel)
+
+
+                    int barWidth = int(math.round(
+                         binVolume / maximumProfileVolume * profileWidthBars))
+
+                    if barWidth > 0
+
+                        color profileColor =
+                             binMidpoint <= close ? supportColor : resistanceColor
+
+                        box profileBar = box.new(
+                             left = profileRight - barWidth,
+                             top = binTop,
+                             right = profileRight,
+                             bottom = binBottom,
+                             xloc = xloc.bar_index,
+                             border_color = color.new(profileColor, 100),
+                             bgcolor = color.new(profileColor, 25))
+
+                        array.push(profileBoxes, profileBar)
+
+
+//=============================================================================
+// 08. CANDLESTICK PATTERN DETECTION
+//=============================================================================
+
+string bullishPatternName = f_bullPatternName()
+string bearishPatternName = f_bearPatternName()
+
+bool bullishPattern = bullishPatternName != ""
+bool bearishPattern = bearishPatternName != ""
+
+
+// Only the nearest current chart-timeframe S/R zones can receive labels.
+bool bullishPatternAtCurrentSupport =
+     currentSupportTouched and bullishPattern
+
+bool bearishPatternAtCurrentResistance =
+     currentResistanceTouched and bearishPattern
+
+
+// Separate strategy confirmation from chart labels.
+// Strategy scoring continues to use its H4/H1 S/R rules.
+bool bullishPatternAtStrategyZone =
+     nearStrategyDemand and bullishPattern
+
+bool bearishPatternAtStrategyZone =
+     nearStrategySupply and bearishPattern
+
+
+// Draw candle names only when the relevant current S/R is being tested.
+if showPatterns and
+     barstate.isconfirmed and
+     bullishPatternAtCurrentSupport
+
+    label.new(
+         x = bar_index,
+         y = low,
+         text = bullishPatternName,
+         style = label.style_label_up,
+         color = color.new(supportColor, 10),
+         textcolor = color.black,
+         size = size.small)
+
+if showPatterns and
+     barstate.isconfirmed and
+     bearishPatternAtCurrentResistance
+
+    label.new(
+         x = bar_index,
+         y = high,
+         text = bearishPatternName,
+         style = label.style_label_down,
+         color = color.new(resistanceColor, 10),
+         textcolor = color.white,
+         size = size.small)
+
+
+//=============================================================================
+// 09. SESSIONS AND NEWS FILTERS
+//=============================================================================
+
+// Regional time zones handle London and New York daylight-saving changes.
+bool inLondon =
+     useLondon and
+     not na(time(timeframe.period, londonSession, "Europe/London"))
+
+bool inNewYork =
+     useNewYork and
+     not na(time(timeframe.period, newYorkSession, "America/New_York"))
+
+bool inTradingSession = inLondon or inNewYork
+
+string sessionText =
+     inLondon ? "London" :
+     inNewYork ? "New York" :
+     "Outside session"
+
+
+// Manual blackout windows.
+bool inNewsBlackout =
+     f_inNewsWindow(news1Enabled, news1Start, news1End) or
+     f_inNewsWindow(news2Enabled, news2Start, news2End) or
+     f_inNewsWindow(news3Enabled, news3Start, news3End) or
+     f_inNewsWindow(news4Enabled, news4Start, news4End)
+
+
+//=============================================================================
+// 10. M15 MARKET STRUCTURE
+//=============================================================================
+
+// M15 swing calculations are used for entry and stop logic.
+// These values are not drawn on the chart.
+
+float m15PivotHigh = ta.pivothigh(high, m15Left, m15Right)
+float m15PivotLow = ta.pivotlow(low, m15Left, m15Right)
+
+var float lastM15High = na
+var float lastM15Low = na
+
+var int lastM15HighBar = na
+var int lastM15LowBar = na
+
+var float doubleBottomNeckline = na
+var int doubleBottomCandidateBar = na
+
+var float doubleTopNeckline = na
+var int doubleTopCandidateBar = na
+
+bool doubleBottomBreakout = false
+bool doubleTopBreakout = false
+
+
+// Confirmed M15 swing high.
+if not na(m15PivotHigh)
+
+    int currentPivotBar = bar_index - m15Right
+
+    bool hasPreviousHigh = not na(lastM15High)
+    bool hasPreviousLow = not na(lastM15Low)
+
+    if hasPreviousHigh and
+         hasPreviousLow and
+         not na(lastM15HighBar) and
+         not na(lastM15LowBar)
+
+        bool interveningLow =
+             lastM15LowBar > lastM15HighBar and
+             lastM15LowBar < currentPivotBar
+
+        bool similarHighs =
+             math.abs(m15PivotHigh - lastM15High) <= atr[m15Right] * 0.25
+
+        bool separatedEnough =
+             currentPivotBar - lastM15HighBar >= 5
+
+        if interveningLow and similarHighs and separatedEnough
+
+            doubleTopNeckline := lastM15Low
+            doubleTopCandidateBar := currentPivotBar
+
+    lastM15High := m15PivotHigh
+    lastM15HighBar := currentPivotBar
+
+
+// Confirmed M15 swing low.
+if not na(m15PivotLow)
+
+    int currentPivotBar = bar_index - m15Right
+
+    bool hasPreviousLow = not na(lastM15Low)
+    bool hasPreviousHigh = not na(lastM15High)
+
+    if hasPreviousLow and
+         hasPreviousHigh and
+         not na(lastM15LowBar) and
+         not na(lastM15HighBar)
+
+        bool interveningHigh =
+             lastM15HighBar > lastM15LowBar and
+             lastM15HighBar < currentPivotBar
+
+        bool similarLows =
+             math.abs(m15PivotLow - lastM15Low) <= atr[m15Right] * 0.25
+
+        bool separatedEnough =
+             currentPivotBar - lastM15LowBar >= 5
+
+        if interveningHigh and similarLows and separatedEnough
+
+            doubleBottomNeckline := lastM15High
+            doubleBottomCandidateBar := currentPivotBar
+
+    lastM15Low := m15PivotLow
+    lastM15LowBar := currentPivotBar
+
+
+// Double-bottom neckline breakout.
+doubleBottomBreakout :=
+     not na(doubleBottomNeckline) and
+     not na(doubleBottomCandidateBar) and
+     bar_index - doubleBottomCandidateBar <= 30 and
+     close > doubleBottomNeckline and
+     close[1] <= doubleBottomNeckline
+
+// Double-top neckline breakout.
+doubleTopBreakout :=
+     not na(doubleTopNeckline) and
+     not na(doubleTopCandidateBar) and
+     bar_index - doubleTopCandidateBar <= 30 and
+     close < doubleTopNeckline and
+     close[1] >= doubleTopNeckline
+
+if doubleBottomBreakout
+    doubleBottomNeckline := na
+    doubleBottomCandidateBar := na
+
+if doubleTopBreakout
+    doubleTopNeckline := na
+    doubleTopCandidateBar := na
+
+// Expire old unconfirmed patterns.
+if not na(doubleBottomCandidateBar) and
+     bar_index - doubleBottomCandidateBar > 30
+
+    doubleBottomNeckline := na
+    doubleBottomCandidateBar := na
+
+if not na(doubleTopCandidateBar) and
+     bar_index - doubleTopCandidateBar > 30
+
+    doubleTopNeckline := na
+    doubleTopCandidateBar := na
+
+
+// CHoCH confirmation.
+bool bullishChoCh =
+     not na(lastM15High) and
+     ta.crossover(close, lastM15High)
+
+bool bearishChoCh =
+     not na(lastM15Low) and
+     ta.crossunder(close, lastM15Low)
+
+
+// Pullback retracement.
+float impulseRange = lastM15High - lastM15Low
+
+float bullRetracementPercent =
+     impulseRange > syminfo.mintick ?
+     (lastM15High - close) / impulseRange * 100.0 :
+     na
+
+float bearRetracementPercent =
+     impulseRange > syminfo.mintick ?
+     (close - lastM15Low) / impulseRange * 100.0 :
+     na
+
+bool bullishImpulseOrder =
+     not na(lastM15LowBar) and
+     not na(lastM15HighBar) and
+     lastM15LowBar < lastM15HighBar
+
+bool bearishImpulseOrder =
+     not na(lastM15LowBar) and
+     not na(lastM15HighBar) and
+     lastM15HighBar < lastM15LowBar
+
+bool validBullPullback =
+     bullishImpulseOrder and
+     not na(bullRetracementPercent) and
+     close < lastM15High and
+     close > lastM15Low and
+     bullRetracementPercent >= 30 and
+     bullRetracementPercent <= 70
+
+bool validBearPullback =
+     bearishImpulseOrder and
+     not na(bearRetracementPercent) and
+     close > lastM15Low and
+     close < lastM15High and
+     bearRetracementPercent >= 30 and
+     bearRetracementPercent <= 70
+
+
+//=============================================================================
+// 11. RSI DIVERGENCE
+//=============================================================================
+
+// Divergence is calculated internally.
+// No divergence lines or markers are displayed.
+
+float pricePivotLow = ta.pivotlow(low, divLeft, divRight)
+float pricePivotHigh = ta.pivothigh(high, divLeft, divRight)
+
+var float previousDivLowPrice = na
+var float previousDivLowRsi = na
+var int previousDivLowBar = na
+
+var float previousDivHighPrice = na
+var float previousDivHighRsi = na
+var int previousDivHighBar = na
+
+var int lastBullDivBar = na
+var int lastBearDivBar = na
+
+
+// Bullish divergence: price lower low, RSI higher low.
+if not na(pricePivotLow)
+
+    float pivotRsi = rsi[divRight]
+    int pivotBar = bar_index - divRight
+
+    int separation =
+         not na(previousDivLowBar) ?
+         pivotBar - previousDivLowBar :
+         na
+
+    bool validSeparation =
+         not na(separation) and
+         separation >= divMinBars and
+         separation <= divMaxBars
+
+    bool bullishDivergence =
+         validSeparation and
+         pricePivotLow < previousDivLowPrice and
+         pivotRsi > previousDivLowRsi
+
+    if bullishDivergence
+        lastBullDivBar := bar_index
+
+    previousDivLowPrice := pricePivotLow
+    previousDivLowRsi := pivotRsi
+    previousDivLowBar := pivotBar
+
+
+// Bearish divergence: price higher high, RSI lower high.
+if not na(pricePivotHigh)
+
+    float pivotRsi = rsi[divRight]
+    int pivotBar = bar_index - divRight
+
+    int separation =
+         not na(previousDivHighBar) ?
+         pivotBar - previousDivHighBar :
+         na
+
+    bool validSeparation =
+         not na(separation) and
+         separation >= divMinBars and
+         separation <= divMaxBars
+
+    bool bearishDivergence =
+         validSeparation and
+         pricePivotHigh > previousDivHighPrice and
+         pivotRsi < previousDivHighRsi
+
+    if bearishDivergence
+        lastBearDivBar := bar_index
+
+    previousDivHighPrice := pricePivotHigh
+    previousDivHighRsi := pivotRsi
+    previousDivHighBar := pivotBar
+
+
+bool bullishDivergenceActive =
+     not na(lastBullDivBar) and
+     bar_index - lastBullDivBar <= divActiveBars
+
+bool bearishDivergenceActive =
+     not na(lastBearDivBar) and
+     bar_index - lastBearDivBar <= divActiveBars
+
+
+//=============================================================================
+// 12. WEIGHTED CONFIRMATION SCORING
+//=============================================================================
+
+// Continuation scoring:
+// H4 20, H1 15, S/R 20, pullback 15,
+// RSI divergence 10, candle confirmation 20.
+
+// Long continuation.
+int longContH4 = h4Trend == 1 ? 20 : 0
+int longContH1 = h1Trend == 1 ? 15 : 0
+int longContZone = nearStrategyDemand ? 20 : 0
+int longContPullback = validBullPullback ? 15 : 0
+int longContRsi = bullishDivergenceActive ? 10 : 0
+int longContCandle = bullishPatternAtStrategyZone ? 20 : 0
+
+int longContinuationScore =
+     longContH4 +
+     longContH1 +
+     longContZone +
+     longContPullback +
+     longContRsi +
+     longContCandle
+
+
+// Short continuation.
+int shortContH4 = h4Trend == -1 ? 20 : 0
+int shortContH1 = h1Trend == -1 ? 15 : 0
+int shortContZone = nearStrategySupply ? 20 : 0
+int shortContPullback = validBearPullback ? 15 : 0
+int shortContRsi = bearishDivergenceActive ? 10 : 0
+int shortContCandle = bearishPatternAtStrategyZone ? 20 : 0
+
+int shortContinuationScore =
+     shortContH4 +
+     shortContH1 +
+     shortContZone +
+     shortContPullback +
+     shortContRsi +
+     shortContCandle
+
+
+// Reversal scoring:
+// S/R 20, RSI divergence 20, double pattern 15,
+// CHoCH 20, candle confirmation 20, session 5.
+
+// Long reversal.
+int longRevZone = nearStrategyDemand ? 20 : 0
+int longRevRsi = bullishDivergenceActive ? 20 : 0
+int longRevPattern = doubleBottomBreakout ? 15 : 0
+int longRevChoCh = bullishChoCh ? 20 : 0
+int longRevCandle = bullishPatternAtStrategyZone ? 20 : 0
+int longRevSession = inTradingSession ? 5 : 0
+
+int longReversalScore =
+     longRevZone +
+     longRevRsi +
+     longRevPattern +
+     longRevChoCh +
+     longRevCandle +
+     longRevSession
+
+
+// Short reversal.
+int shortRevZone = nearStrategySupply ? 20 : 0
+int shortRevRsi = bearishDivergenceActive ? 20 : 0
+int shortRevPattern = doubleTopBreakout ? 15 : 0
+int shortRevChoCh = bearishChoCh ? 20 : 0
+int shortRevCandle = bearishPatternAtStrategyZone ? 20 : 0
+int shortRevSession = inTradingSession ? 5 : 0
+
+int shortReversalScore =
+     shortRevZone +
+     shortRevRsi +
+     shortRevPattern +
+     shortRevChoCh +
+     shortRevCandle +
+     shortRevSession
+
+
+//=============================================================================
+// 13. TRADE SETUPS
+//=============================================================================
+
+bool longContinuationSetup =
+     h4Trend == 1 and
+     h1Trend == 1 and
+     nearStrategyDemand and
+     validBullPullback and
+     longContinuationScore >= minimumScore
+
+bool shortContinuationSetup =
+     h4Trend == -1 and
+     h1Trend == -1 and
+     nearStrategySupply and
+     validBearPullback and
+     shortContinuationScore >= minimumScore
+
+bool longReversalSetup =
+     nearStrategyDemand and
+     longReversalScore >= minimumScore
+
+bool shortReversalSetup =
+     nearStrategySupply and
+     shortReversalScore >= minimumScore
+
+bool longSetup =
+     longContinuationSetup or longReversalSetup
+
+bool shortSetup =
+     shortContinuationSetup or shortReversalSetup
+
+
+//=============================================================================
+// 14. DAILY LOSS PROTECTION
+//=============================================================================
+
+// The daily equity baseline resets at UTC midnight.
+// It includes realised and unrealised strategy equity.
+
+int utcDay = time("D", "0000-2359", "Etc/UTC")
+bool newUtcDay = ta.change(utcDay) != 0
+
+var float dayStartEquity = strategy.equity
+var bool dailyLockout = false
+
+if newUtcDay
+    dayStartEquity := strategy.equity
+    dailyLockout := false
+
+float dailyPnlPercent =
+     dayStartEquity > 0 ?
+     (strategy.equity - dayStartEquity) / dayStartEquity * 100.0 :
+     0.0
+
+if dailyPnlPercent <= -(dailyLossPercent * 100.0)
+    dailyLockout := true
+
+if dailyLockout and closeAtDailyLimit and strategy.position_size != 0
+    strategy.close_all(comment = "APAS daily loss limit")
+
+
+//=============================================================================
+// 15. STOPS, POSITION SIZE AND TAKE PROFIT
+//=============================================================================
+
+// Structural M15 stops with ATR buffer.
+float longStopCandidate =
+     not na(lastM15Low) ?
+     lastM15Low - atr * stopBufferAtr :
+     na
+
+float shortStopCandidate =
+     not na(lastM15High) ?
+     lastM15High + atr * stopBufferAtr :
+     na
+
+float longRiskDistance =
+     not na(longStopCandidate) ?
+     close - longStopCandidate :
+     na
+
+float shortRiskDistance =
+     not na(shortStopCandidate) ?
+     shortStopCandidate - close :
+     na
+
+
+// Position sizing approximation.
+// Validate syminfo.pointvalue and contract sizing with the broker.
+
+float riskCash = strategy.equity * riskPercent
+
+float longRiskPerUnit =
+     not na(longRiskDistance) ?
+     longRiskDistance * syminfo.pointvalue :
+     na
+
+float shortRiskPerUnit =
+     not na(shortRiskDistance) ?
+     shortRiskDistance * syminfo.pointvalue :
+     na
+
+float rawLongQuantity =
+     not na(longRiskPerUnit) and longRiskPerUnit > 0 ?
+     riskCash / longRiskPerUnit :
+     na
+
+float rawShortQuantity =
+     not na(shortRiskPerUnit) and shortRiskPerUnit > 0 ?
+     riskCash / shortRiskPerUnit :
+     na
+
+float longQuantity =
+     not na(rawLongQuantity) ?
+     math.min(
+         maximumQuantity,
+         math.floor(rawLongQuantity / quantityStep) * quantityStep) :
+     na
+
+float shortQuantity =
+     not na(rawShortQuantity) ?
+     math.min(
+         maximumQuantity,
+         math.floor(rawShortQuantity / quantityStep) * quantityStep) :
+     na
+
+
+// Find next opposing strategy zone.
+float longZoneTarget = f_nearestAbove(
+     h4SupplyActive ? h4SupplyBottom : na,
+     h1SupplyActive ? h1SupplyBottom : na,
+     previousDayHigh,
+     close)
+
+float shortZoneTarget = f_nearestBelow(
+     h4DemandActive ? h4DemandTop : na,
+     h1DemandActive ? h1DemandTop : na,
+     previousDayLow,
+     close)
+
+
+// Active trade details, used by the strategy and dashboard.
+var float activeStop = na
+var float activeTarget1 = na
+var float activeTarget2 = na
+
+var string activeDirection = "—"
+var string activeSetupType = "—"
+var string activeTpMode = "—"
+
+
+// Entries are allowed only on M15.
+// Other timeframes are available for S/R visual analysis.
+bool entryFiltersPass =
+     isM15Chart and
+     supportedPair and
+     inTradingSession and
+     not inNewsBlackout and
+     not dailyLockout and
+     barstate.isconfirmed and
+     strategy.position_size == 0
+
+bool unambiguousLong = longSetup and not shortSetup
+bool unambiguousShort = shortSetup and not longSetup
+
+bool longEntry =
+     entryFiltersPass and
+     unambiguousLong and
+     not na(longQuantity) and
+     longQuantity >= quantityStep and
+     not na(longStopCandidate) and
+     longRiskDistance > syminfo.mintick
+
+bool shortEntry =
+     entryFiltersPass and
+     unambiguousShort and
+     not na(shortQuantity) and
+     shortQuantity >= quantityStep and
+     not na(shortStopCandidate) and
+     shortRiskDistance > syminfo.mintick
+
+
+//-----------------------------------------------------------------------------
+// Long order
+//-----------------------------------------------------------------------------
+
+if longEntry
+
+    float riskDistance = close - longStopCandidate
+
+    float targetAtOneR = close + riskDistance
+    float targetAtTwoR = close + riskDistance * fixedRewardRisk
+
+    float zoneTarget =
+         not na(longZoneTarget) ?
+         longZoneTarget :
+         targetAtTwoR
+
+    activeStop := math.round_to_mintick(longStopCandidate)
+
+    activeTarget1 := math.round_to_mintick(
+         takeProfitMode == "TP-B: Next opposing zone" ?
+         zoneTarget :
+         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         targetAtOneR :
+         targetAtTwoR)
+
+    activeTarget2 := math.round_to_mintick(
+         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         targetAtTwoR :
+         activeTarget1)
+
+    activeDirection := "LONG"
+
+    activeSetupType :=
+         longContinuationSetup ?
+         "Continuation" :
+         "Reversal"
+
+    activeTpMode := takeProfitMode
+
+    strategy.entry(
+         "APAS Long",
+         strategy.long,
+         qty = longQuantity,
+         comment = activeSetupType)
+
+    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+
+        strategy.exit(
+             "Long TP1",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget1,
+             qty_percent = 50)
+
+        strategy.exit(
+             "Long TP2",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget2,
+             qty_percent = 50)
+
+    else
+
+        strategy.exit(
+             "Long Exit",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget1)
+
+
+//-----------------------------------------------------------------------------
+// Short order
+//-----------------------------------------------------------------------------
+
+if shortEntry
+
+    float riskDistance = shortStopCandidate - close
+
+    float targetAtOneR = close - riskDistance
+    float targetAtTwoR = close - riskDistance * fixedRewardRisk
+
+    float zoneTarget =
+         not na(shortZoneTarget) ?
+         shortZoneTarget :
+         targetAtTwoR
+
+    activeStop := math.round_to_mintick(shortStopCandidate)
+
+    activeTarget1 := math.round_to_mintick(
+         takeProfitMode == "TP-B: Next opposing zone" ?
+         zoneTarget :
+         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         targetAtOneR :
+         targetAtTwoR)
+
+    activeTarget2 := math.round_to_mintick(
+         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         targetAtTwoR :
+         activeTarget1)
+
+    activeDirection := "SHORT"
+
+    activeSetupType :=
+         shortContinuationSetup ?
+         "Continuation" :
+         "Reversal"
+
+    activeTpMode := takeProfitMode
+
+    strategy.entry(
+         "APAS Short",
+         strategy.short,
+         qty = shortQuantity,
+         comment = activeSetupType)
+
+    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+
+        strategy.exit(
+             "Short TP1",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget1,
+             qty_percent = 50)
+
+        strategy.exit(
+             "Short TP2",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget2,
+             qty_percent = 50)
+
+    else
+
+        strategy.exit(
+             "Short Exit",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget1)
+
+
+//-----------------------------------------------------------------------------
+// Maintain protective orders while positions are open.
+//-----------------------------------------------------------------------------
+
+if strategy.position_size > 0 and not na(activeStop)
+
+    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+
+        strategy.exit(
+             "Long TP1",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget1,
+             qty_percent = 50)
+
+        strategy.exit(
+             "Long TP2",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget2,
+             qty_percent = 50)
+
+    else
+
+        strategy.exit(
+             "Long Exit",
+             from_entry = "APAS Long",
+             stop = activeStop,
+             limit = activeTarget1)
+
+
+if strategy.position_size < 0 and not na(activeStop)
+
+    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+
+        strategy.exit(
+             "Short TP1",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget1,
+             qty_percent = 50)
+
+        strategy.exit(
+             "Short TP2",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget2,
+             qty_percent = 50)
+
+    else
+
+        strategy.exit(
+             "Short Exit",
+             from_entry = "APAS Short",
+             stop = activeStop,
+             limit = activeTarget1)
+
+
+// Clear trade details after a position closes.
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+
+    activeStop := na
+    activeTarget1 := na
+    activeTarget2 := na
+
+    activeDirection := "—"
+    activeSetupType := "—"
+    activeTpMode := "—"
+
+
+//=============================================================================
+// 16. COMPACT ANALYSIS TABLE
+//=============================================================================
+
+// Only important information is shown:
+// - Current chart timeframe and its active S/R.
+// - H4/H1 trend context.
+// - Candle patterns at the current S/R.
+// - Continuation and reversal scores.
+// - Session, news and daily risk filters.
+// - Latest signal / timeframe status.
+
+var table analysisTable = table.new(
+     position.top_right,
+     4,
+     8,
+     frame_color = color.gray,
+     frame_width = 1,
+     border_color = color.new(color.gray, 70),
+     border_width = 1)
+
+
+// Current S/R display values.
+string supportText =
+     currentSupportIndex >= 0 ?
+     str.tostring(currentSupportBottom, format.mintick) +
+     " – " +
+     str.tostring(currentSupportTop, format.mintick) :
+     "Not available"
+
+string resistanceText =
+     currentResistanceIndex >= 0 ?
+     str.tostring(currentResistanceBottom, format.mintick) +
+     " – " +
+     str.tostring(currentResistanceTop, format.mintick) :
+     "Not available"
+
+
+// Dashboard information.
+string htfText =
+     "H4: " + f_trendText(h4Trend) +
+     " | H1: " + f_trendText(h1Trend)
+
+string dailyRiskText =
+     str.tostring(dailyPnlPercent, "#.##") +
+     "% / -" +
+     str.tostring(dailyLossPercent * 100, "#.0") +
+     "%"
+
+string sessionTextForTable =
+     sessionText +
+     " | " +
+     (inNewsBlackout ? "News blocked" : "News clear")
+
+bool commonFiltersPass =
+     isM15Chart and
+     supportedPair and
+     inTradingSession and
+     not inNewsBlackout and
+     not dailyLockout and
+     strategy.position_size == 0
+
+bool longFiltersPass = commonFiltersPass
+bool shortFiltersPass = commonFiltersPass
+
+string longSignalText =
+     not isM15Chart ? "M15 REQUIRED" :
+     not supportedPair ? "PAIR BLOCKED" :
+     strategy.position_size > 0 ? "POSITION OPEN" :
+     longSetup ? (longFiltersPass ? "READY" : "FILTERED") :
+     "—"
+
+string shortSignalText =
+     not isM15Chart ? "M15 REQUIRED" :
+     not supportedPair ? "PAIR BLOCKED" :
+     strategy.position_size < 0 ? "POSITION OPEN" :
+     shortSetup ? (shortFiltersPass ? "READY" : "FILTERED") :
+     "—"
+
+
+if barstate.islast
+
+    table.clear(analysisTable, 0, 0, 3, 7)
+
+    color header = color.new(color.blue, 60)
+    color neutral = color.new(color.gray, 88)
+
+    // Header.
+    f_tableCell(
+         analysisTable, 0, 0,
+         "APAS V01.2",
+         header, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 0,
+         syminfo.ticker + " | " + timeframe.period,
+         header, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 0,
+         "LONG",
+         header, color.white)
+
+    f_tableCell(
+         analysisTable, 3, 0,
+         "SHORT",
+         header, color.white)
+
+
+    // Current chart timeframe S/R.
+    f_tableCell(
+         analysisTable, 0, 1,
+         "Current S/R",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 1,
+         "Active chart timeframe",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 1,
+         "Support: " + supportText,
+         f_statusColor(currentSupportIndex >= 0),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 1,
+         "Resistance: " + resistanceText,
+         f_statusColor(currentResistanceIndex >= 0),
+         color.white)
+
+
+    // Higher-timeframe context.
+    f_tableCell(
+         analysisTable, 0, 2,
+         "H4 / H1 context",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 2,
+         isM15Chart ? htfText : "M15 strategy context",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 2,
+         isM15Chart and h4Trend == 1 and h1Trend == 1 ? "Aligned" : "—",
+         f_statusColor(isM15Chart and h4Trend == 1 and h1Trend == 1),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 2,
+         isM15Chart and h4Trend == -1 and h1Trend == -1 ? "Aligned" : "—",
+         f_statusColor(isM15Chart and h4Trend == -1 and h1Trend == -1),
+         color.white)
+
+
+    // Candle patterns at the currently highlighted S/R only.
+    f_tableCell(
+         analysisTable, 0, 3,
+         "Candle at current S/R",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 3,
+         "Confirmed candle",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 3,
+         bullishPatternAtCurrentSupport ? bullishPatternName : "—",
+         f_statusColor(bullishPatternAtCurrentSupport),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 3,
+         bearishPatternAtCurrentResistance ? bearishPatternName : "—",
+         f_statusColor(bearishPatternAtCurrentResistance),
+         color.white)
+
+
+    // Continuation scores.
+    f_tableCell(
+         analysisTable, 0, 4,
+         "Continuation",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 4,
+         "Minimum " + str.tostring(minimumScore),
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 4,
+         isM15Chart ? str.tostring(longContinuationScore) + " / 100" : "M15 only",
+         f_statusColor(isM15Chart and longContinuationScore >= minimumScore),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 4,
+         isM15Chart ? str.tostring(shortContinuationScore) + " / 100" : "M15 only",
+         f_statusColor(isM15Chart and shortContinuationScore >= minimumScore),
+         color.white)
+
+
+    // Reversal scores.
+    f_tableCell(
+         analysisTable, 0, 5,
+         "Reversal",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 5,
+         "Minimum " + str.tostring(minimumScore),
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 5,
+         isM15Chart ? str.tostring(longReversalScore) + " / 100" : "M15 only",
+         f_statusColor(isM15Chart and longReversalScore >= minimumScore),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 5,
+         isM15Chart ? str.tostring(shortReversalScore) + " / 100" : "M15 only",
+         f_statusColor(isM15Chart and shortReversalScore >= minimumScore),
+         color.white)
+
+
+    // Filters.
+    f_tableCell(
+         analysisTable, 0, 6,
+         "Filters",
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 6,
+         sessionTextForTable,
+         neutral, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 6,
+         longFiltersPass ? "PASS" : "BLOCK",
+         f_statusColor(longFiltersPass),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 6,
+         shortFiltersPass ? "PASS" : "BLOCK",
+         f_statusColor(shortFiltersPass),
+         color.white)
+
+
+    // Latest decision.
+    f_tableCell(
+         analysisTable, 0, 7,
+         "Latest signal",
+         header, color.white)
+
+    f_tableCell(
+         analysisTable, 1, 7,
+         "Daily risk: " + dailyRiskText,
+         header, color.white)
+
+    f_tableCell(
+         analysisTable, 2, 7,
+         longSignalText,
+         f_statusColor(longSignalText == "READY" or longSignalText == "POSITION OPEN"),
+         color.white)
+
+    f_tableCell(
+         analysisTable, 3, 7,
+         shortSignalText,
+         f_statusColor(shortSignalText == "READY" or shortSignalText == "POSITION OPEN"),
+         color.white)
+
+
+//=============================================================================
+// 17. ALERTS
+//=============================================================================
+
+// Alerts are notifications only.
+// They do not submit live broker orders.
+
+if longEntry and barstate.isconfirmed
+
+    alert(
+         "APAS V01.2: Long order submitted. Review the strategy and risk.",
+         alert.freq_once_per_bar_close)
+
+if shortEntry and barstate.isconfirmed
+
+    alert(
+         "APAS V01.2: Short order submitted. Review the strategy and risk.",
+         alert.freq_once_per_bar_close)
