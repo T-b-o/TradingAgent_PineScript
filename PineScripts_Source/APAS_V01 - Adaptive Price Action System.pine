@@ -1,7 +1,7 @@
 //@version=6
 strategy(
-     title = "APAS V01.2 — Adaptive Price Action System",
-     shorttitle = "APAS V01.2",
+     title = "APAS V01 — Adaptive Price Action System",
+     shorttitle = "APAS V01",
      overlay = true,
      initial_capital = 10000,
      pyramiding = 0,
@@ -2265,7 +2265,7 @@ if barstate.islast
     // Header.
     f_tableCell(
          analysisTable, 0, 0,
-         "APAS V01.2",
+         "APAS V01",
          header, color.white)
 
     f_tableCell(
@@ -2462,11 +2462,11 @@ if barstate.islast
 if longEntry and barstate.isconfirmed
 
     alert(
-         "APAS V01.2: Long order submitted. Review the strategy and risk.",
+         "APAS V01: Long order submitted. Review the strategy and risk.",
          alert.freq_once_per_bar_close)
 
 if shortEntry and barstate.isconfirmed
 
     alert(
-         "APAS V01.2: Short order submitted. Review the strategy and risk.",
+         "APAS V01: Short order submitted. Review the strategy and risk.",
          alert.freq_once_per_bar_close)
