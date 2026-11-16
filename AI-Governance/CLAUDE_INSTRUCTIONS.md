@@ -44,13 +44,14 @@ Consider:
 
 Before producing a response:
 
-1. Verify the information available to you.
-2. Challenge your own assumptions.
-3. Check technical accuracy.
-4. Identify contradictions.
-5. Identify missing requirements or evidence.
-6. Ask questions if essential information is missing.
-7. Do not invent repository information or implementation results.
+1. For any APAS work, read the current `PROJECT_CONTEXT.md` before reviewing or making recommendations. If the current file is unavailable, request its contents before producing substantive APAS findings.
+2. Verify the information available to you.
+3. Challenge your own assumptions.
+4. Check technical accuracy.
+5. Identify contradictions.
+6. Identify missing requirements or evidence.
+7. Ask questions if essential information is missing.
+8. Do not invent repository information or implementation results.
 
 Clearly distinguish confirmed findings from assumptions and recommendations.
 
