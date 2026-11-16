@@ -20,7 +20,6 @@ strategy(
 
 string GROUP_TF       = "01 — Timeframes"
 string GROUP_ZONES    = "02 — Support and resistance"
-string GROUP_PROFILE  = "03 — S/R visual profile"
 string GROUP_RSI      = "04 — RSI divergence"
 string GROUP_PATTERNS = "05 — Candlestick patterns"
 string GROUP_SESSIONS = "06 — Trading sessions"
@@ -96,90 +95,23 @@ int maxZonesPerSide = input.int(
 
 
 //-----------------------------------------------------------------------------
-// S/R visual profile settings
+// Zone styles
 //-----------------------------------------------------------------------------
-
-bool showProfile = input.bool(
-     true,
-     "Show horizontal volume profile",
-     group = GROUP_PROFILE)
-
-bool showLookbackBackground = input.bool(
-     true,
-     "Show profile lookback background",
-     group = GROUP_PROFILE)
-
-bool profileDynamicLookback = input.bool(
-     true,
-     "Use dynamic pivot lookback",
-     group = GROUP_PROFILE,
-     tooltip = "Anchor the profile to the latest confirmed major pivot.")
-
-int profileLookback = input.int(
-     100,
-     "Fixed profile lookback candles",
-     minval = 20,
-     maxval = 500,
-     group = GROUP_PROFILE)
-
-int profileMaxLookback = input.int(
-     500,
-     "Maximum dynamic lookback candles",
-     minval = 100,
-     maxval = 2000,
-     group = GROUP_PROFILE)
-
-int profilePivotPeriod = input.int(
-     200,
-     "Dynamic lookback pivot period",
-     minval = 2,
-     maxval = 500,
-     group = GROUP_PROFILE)
-
-int profileResolution = input.int(
-     40,
-     "Profile resolution",
-     minval = 8,
-     maxval = 50,
-     group = GROUP_PROFILE)
-
-float profileZoneTolerance = input.float(
-     0.93,
-     "S/R zone tolerance",
-     minval = 0.01,
-     maxval = 1.0,
-     step = 0.01,
-     group = GROUP_PROFILE,
-     tooltip = "Lower values mark fewer low-volume profile zones.")
-
-int profileWidthBars = input.int(
-     12,
-     "Maximum profile width",
-     minval = 3,
-     maxval = 40,
-     group = GROUP_PROFILE)
-
-int profileRightOffset = input.int(
-     5,
-     "Profile distance from current candle",
-     minval = 1,
-     maxval = 50,
-     group = GROUP_PROFILE)
 
 color supportColor = input.color(
      color.rgb(0, 255, 187),
-     "Current support",
-     group = GROUP_PROFILE)
+     "Support zone",
+     group = GROUP_ZONES)
 
 color resistanceColor = input.color(
      color.rgb(255, 50, 50),
-     "Current resistance",
-     group = GROUP_PROFILE)
+     "Resistance zone",
+     group = GROUP_ZONES)
 
 color neutralColor = input.color(
      color.gray,
-     "Other S/R zones and profile",
-     group = GROUP_PROFILE)
+     "Historical zones",
+     group = GROUP_ZONES)
 
 
 //-----------------------------------------------------------------------------
@@ -208,8 +140,9 @@ int divActiveBars = input.int(
 
 bool showPatterns = input.bool(
      false,
-     "Show candle labels at current S/R only",
-     group = GROUP_PATTERNS)
+     "Show confirmed candle labels at nearest active S/R",
+     group = GROUP_PATTERNS,
+     tooltip = "Only shows confirmed bullish or bearish candle names when they match the nearest active APAS support or resistance zone.")
 
 
 //-----------------------------------------------------------------------------
@@ -891,6 +824,7 @@ var array<box> supportBoxes = array.new_box()
 var array<float> supportTops = array.new_float()
 var array<float> supportBottoms = array.new_float()
 var array<int> supportTimes = array.new_int()
+var array<int> supportConfirmBars = array.new_int()
 var array<bool> supportActive = array.new_bool()
 
 // Resistance zone arrays.
@@ -898,6 +832,7 @@ var array<box> resistanceBoxes = array.new_box()
 var array<float> resistanceTops = array.new_float()
 var array<float> resistanceBottoms = array.new_float()
 var array<int> resistanceTimes = array.new_int()
+var array<int> resistanceConfirmBars = array.new_int()
 var array<bool> resistanceActive = array.new_bool()
 
 
@@ -927,6 +862,7 @@ if not na(chartPivotLow) and not na(chartAtr[chartPivotRight])
     array.push(supportTops, zoneTop)
     array.push(supportBottoms, zoneBottom)
     array.push(supportTimes, time[chartPivotRight])
+    array.push(supportConfirmBars, bar_index)
     array.push(supportActive, true)
 
     // Keep the number of displayed historical support zones limited.
@@ -938,6 +874,7 @@ if not na(chartPivotLow) and not na(chartAtr[chartPivotRight])
         array.shift(supportTops)
         array.shift(supportBottoms)
         array.shift(supportTimes)
+        array.shift(supportConfirmBars)
         array.shift(supportActive)
 
 
@@ -967,6 +904,7 @@ if not na(chartPivotHigh) and not na(chartAtr[chartPivotRight])
     array.push(resistanceTops, zoneTop)
     array.push(resistanceBottoms, zoneBottom)
     array.push(resistanceTimes, time[chartPivotRight])
+    array.push(resistanceConfirmBars, bar_index)
     array.push(resistanceActive, true)
 
     // Keep the number of displayed historical resistance zones limited.
@@ -978,6 +916,7 @@ if not na(chartPivotHigh) and not na(chartAtr[chartPivotRight])
         array.shift(resistanceTops)
         array.shift(resistanceBottoms)
         array.shift(resistanceTimes)
+        array.shift(resistanceConfirmBars)
         array.shift(resistanceActive)
 
 
@@ -1097,10 +1036,17 @@ if array.size(supportBoxes) > 0
 
         bool active = array.get(supportActive, i)
         bool current = i == currentSupportIndex
+        bool approached =
+             current and
+             f_zoneTouch(
+                 array.get(supportTops, i),
+                 array.get(supportBottoms, i),
+                 chartAtr,
+                 zoneTouchAtr)
 
         color zoneBg =
              not active ? color.new(neutralColor, 96) :
-             current ? color.new(supportColor, 84) :
+             current ? color.new(supportColor, approached ? 58 : 82) :
              color.new(neutralColor, 93)
 
         color zoneBorder =
@@ -1110,7 +1056,9 @@ if array.size(supportBoxes) > 0
 
         box.set_bgcolor(zoneBox, zoneBg)
         box.set_border_color(zoneBox, zoneBorder)
-        box.set_border_width(zoneBox, current ? 2 : 1)
+        box.set_border_width(
+             zoneBox,
+             current ? (approached ? 3 : 2) : 1)
 
 
 if array.size(resistanceBoxes) > 0
@@ -1121,10 +1069,17 @@ if array.size(resistanceBoxes) > 0
 
         bool active = array.get(resistanceActive, i)
         bool current = i == currentResistanceIndex
+        bool approached =
+             current and
+             f_zoneTouch(
+                 array.get(resistanceTops, i),
+                 array.get(resistanceBottoms, i),
+                 chartAtr,
+                 zoneTouchAtr)
 
         color zoneBg =
              not active ? color.new(neutralColor, 96) :
-             current ? color.new(resistanceColor, 84) :
+             current ? color.new(resistanceColor, approached ? 58 : 82) :
              color.new(neutralColor, 93)
 
         color zoneBorder =
@@ -1134,7 +1089,9 @@ if array.size(resistanceBoxes) > 0
 
         box.set_bgcolor(zoneBox, zoneBg)
         box.set_border_color(zoneBox, zoneBorder)
-        box.set_border_width(zoneBox, current ? 2 : 1)
+        box.set_border_width(
+             zoneBox,
+             current ? (approached ? 3 : 2) : 1)
 
 
 //-----------------------------------------------------------------------------
@@ -1179,175 +1136,152 @@ bool currentResistanceTouched =
 
 
 //=============================================================================
-// 07. OPTIONAL ALGOALPHA-STYLE PROFILE VISUAL
+// 07. APAS NATIVE SUPPORT/RESISTANCE STRENGTH
 //=============================================================================
 
-// This profile is for visual context only and does not influence entry scoring.
-// Forex volume is commonly tick volume and depends on the data feed.
+f_zoneStrength(
+     float zoneTop,
+     float zoneBottom,
+     int pivotTime,
+     int confirmBar,
+     bool isSupport,
+     bool active) =>
 
-float profilePivotHigh = ta.pivothigh(high, profilePivotPeriod, profilePivotPeriod)
-float profilePivotLow = ta.pivotlow(low, profilePivotPeriod, profilePivotPeriod)
+    int firstReactionBar = confirmBar + 1
+    int barsToScan = active ? bar_index - firstReactionBar : -1
+    int reactionCount = 0
+    float rejectionTotal = 0.0
+    int lastReactionTime = na
+    bool armed = false
 
-var int profilePivotBar = na
+    if barsToScan >= 0
 
-if not na(profilePivotHigh) or not na(profilePivotLow)
-    profilePivotBar := bar_index - profilePivotPeriod
+        for step = 0 to barsToScan
 
-int barsSinceProfilePivot =
-     na(profilePivotBar) ? profileLookback :
-     bar_index - profilePivotBar + 1
+            int offset = barsToScan - step
+            bool intersectsZone =
+                 low[offset] <= zoneTop and
+                 high[offset] >= zoneBottom
+            bool closesOnSafeSide =
+                 isSupport ? close[offset] > zoneTop :
+                 close[offset] < zoneBottom
 
-int requestedProfileBars =
-     profileDynamicLookback ?
-     math.min(barsSinceProfilePivot, profileMaxLookback) :
-     profileLookback
+            if armed and
+                 intersectsZone and
+                 closesOnSafeSide and
+                 not na(chartAtr[offset]) and
+                 chartAtr[offset] > 0
 
-int profileBarsUsed = math.min(requestedProfileBars, bar_index + 1)
-int profileLeftBar = bar_index - profileBarsUsed + 1
+                float rejectionDistance =
+                     isSupport ? close[offset] - zoneTop :
+                     zoneBottom - close[offset]
 
-var array<box> profileBoxes = array.new_box()
-var array<label> profileZoneLabels = array.new_label()
-var box profileBackgroundBox = na
+                reactionCount += 1
+                rejectionTotal += math.min(
+                     rejectionDistance / chartAtr[offset],
+                     1.0)
+                lastReactionTime := time_close[offset]
+                armed := false
 
-if barstate.islast
+            else if not intersectsZone and closesOnSafeSide
 
-    // Delete the previous profile drawings before rebuilding them.
-    while array.size(profileBoxes) > 0
+                armed := true
 
-        box oldProfileBox = array.pop(profileBoxes)
-        box.delete(oldProfileBox)
+    float countScore = math.min(reactionCount / 5.0, 1.0)
+    float rejectionScore =
+         reactionCount > 0 ? rejectionTotal / reactionCount : 0.0
+    float recencyScore =
+         na(lastReactionTime) ? 0.0 :
+         math.exp(
+             -math.log(2.0) *
+             float(time_close - lastReactionTime) /
+             math.max(float(maximumZoneAgeMs) * 0.5, 1.0))
+    float ageScore =
+         math.max(
+             0.0,
+             1.0 - math.max(float(time - pivotTime), 0.0) / maximumZoneAgeMs)
+    float activeFactor = active ? 1.0 : 0.0
 
-    while array.size(profileZoneLabels) > 0
-
-        label oldProfileLabel = array.pop(profileZoneLabels)
-        label.delete(oldProfileLabel)
-
-    if not na(profileBackgroundBox)
-        box.delete(profileBackgroundBox)
-        profileBackgroundBox := na
-
-    if showProfile and profileBarsUsed > 0
-
-        float profileRangeHigh = high
-        float profileRangeLow = low
-
-        for j = 1 to profileBarsUsed - 1
-
-            profileRangeHigh := math.max(profileRangeHigh, high[j])
-            profileRangeLow := math.min(profileRangeLow, low[j])
-
-        if profileRangeHigh > profileRangeLow
-
-            float profileStep =
-                 (profileRangeHigh - profileRangeLow) / profileResolution
-
-            array<float> profileVolumes =
-                 array.new_float(profileResolution, 0.0)
-
-            // Count each candle's volume in every price bin it intersects.
-            for i = 0 to profileResolution - 1
-
-                float binBottom = profileRangeLow + profileStep * i
-                float binTop = profileRangeLow + profileStep * (i + 1)
-                float binVolume = 0.0
-
-                for j = 0 to profileBarsUsed - 1
-
-                    if low[j] <= binTop and high[j] >= binBottom
-                        binVolume += nz(volume[j], 0.0)
-
-                array.set(profileVolumes, i, binVolume)
+    100.0 * activeFactor * ageScore *
+     (0.40 * countScore + 0.35 * rejectionScore + 0.25 * recencyScore)
 
 
-            float maximumProfileVolume = array.max(profileVolumes)
+var array<label> supportZoneStrengthLabels = array.new_label()
+var array<label> resistanceZoneStrengthLabels = array.new_label()
 
-            if showLookbackBackground
+if barstate.islast and barstate.isconfirmed
 
-                profileBackgroundBox := box.new(
-                     left = profileLeftBar,
-                     top = profileRangeHigh,
-                     right = bar_index,
-                     bottom = profileRangeLow,
-                     xloc = xloc.bar_index,
-                     extend = extend.none,
-                     border_color = color.new(color.blue, 100),
-                     bgcolor = color.new(color.blue, 92),
-                     text = "Total Look-Back Data",
-                     text_color = color.new(color.gray, 15),
-                     text_size = size.tiny,
-                     text_halign = text.align_center,
-                     text_valign = text.align_top)
+    while array.size(supportZoneStrengthLabels) > 0
+        label oldSupportLabel = array.pop(supportZoneStrengthLabels)
+        label.delete(oldSupportLabel)
 
+    while array.size(resistanceZoneStrengthLabels) > 0
+        label oldResistanceLabel = array.pop(resistanceZoneStrengthLabels)
+        label.delete(oldResistanceLabel)
 
-            if maximumProfileVolume > 0
+    if array.size(supportBoxes) > 0
 
-                int profileRight =
-                     bar_index + profileRightOffset + profileWidthBars
+        for i = 0 to array.size(supportBoxes) - 1
 
-                for i = 0 to profileResolution - 1
+            box zoneBox = array.get(supportBoxes, i)
+            bool active = array.get(supportActive, i)
+            bool nearest = i == currentSupportIndex
 
-                    float binVolume = array.get(profileVolumes, i)
-                    float binBottom = profileRangeLow + profileStep * i
-                    float binTop = profileRangeLow + profileStep * (i + 1)
-                    float binMidpoint = math.avg(binBottom, binTop)
+            if active or nearest
 
-                    bool isZone =
-                         (i == profileResolution - 1 or
-                          binVolume < array.get(profileVolumes, i + 1) * profileZoneTolerance) and
-                         (i == 0 or
-                          binVolume < array.get(profileVolumes, i - 1) * profileZoneTolerance)
+                float zoneTop = array.get(supportTops, i)
+                float zoneBottom = array.get(supportBottoms, i)
+                float strength = f_zoneStrength(
+                     zoneTop,
+                     zoneBottom,
+                     array.get(supportTimes, i),
+                     array.get(supportConfirmBars, i),
+                     true,
+                     active)
 
-                    if isZone
+                label strengthLabel = label.new(
+                     x = box.get_right(zoneBox),
+                     y = math.avg(zoneTop, zoneBottom),
+                     xloc = xloc.bar_time,
+                     text = str.tostring(int(math.round(strength))) + "%",
+                     color = color.new(supportColor, nearest ? 0 : 26),
+                     textcolor = color.black,
+                     style = label.style_label_left,
+                     size = size.tiny)
 
-                        color zoneColor =
-                             binMidpoint <= close ? supportColor : resistanceColor
+                array.push(supportZoneStrengthLabels, strengthLabel)
 
-                        box profileZone = box.new(
-                             left = profileLeftBar,
-                             top = binTop,
-                             right = bar_index,
-                             bottom = binBottom,
-                             xloc = xloc.bar_index,
-                             extend = extend.none,
-                             border_color = color.new(zoneColor, 15),
-                             bgcolor = color.new(zoneColor, 58))
+    if array.size(resistanceBoxes) > 0
 
-                        array.push(profileBoxes, profileZone)
+        for i = 0 to array.size(resistanceBoxes) - 1
 
-                        string zoneStrength = str.tostring(
-                             1.0 - binVolume / maximumProfileVolume,
-                             format.percent)
+            box zoneBox = array.get(resistanceBoxes, i)
+            bool active = array.get(resistanceActive, i)
+            bool nearest = i == currentResistanceIndex
 
-                        label zoneLabel = label.new(
-                             x = profileLeftBar,
-                             y = math.avg(binTop, binBottom),
-                             text = zoneStrength,
-                             color = chart.fg_color,
-                             textcolor = chart.bg_color,
-                             style = label.style_label_right,
-                             size = size.small)
+            if active or nearest
 
-                        array.push(profileZoneLabels, zoneLabel)
+                float zoneTop = array.get(resistanceTops, i)
+                float zoneBottom = array.get(resistanceBottoms, i)
+                float strength = f_zoneStrength(
+                     zoneTop,
+                     zoneBottom,
+                     array.get(resistanceTimes, i),
+                     array.get(resistanceConfirmBars, i),
+                     false,
+                     active)
 
+                label strengthLabel = label.new(
+                     x = box.get_right(zoneBox),
+                     y = math.avg(zoneTop, zoneBottom),
+                     xloc = xloc.bar_time,
+                     text = str.tostring(int(math.round(strength))) + "%",
+                     color = color.new(resistanceColor, nearest ? 0 : 26),
+                     textcolor = color.white,
+                     style = label.style_label_left,
+                     size = size.tiny)
 
-                    int barWidth = int(math.round(
-                         binVolume / maximumProfileVolume * profileWidthBars))
-
-                    if barWidth > 0
-
-                        color profileColor =
-                             binMidpoint <= close ? supportColor : resistanceColor
-
-                        box profileBar = box.new(
-                             left = profileRight - barWidth,
-                             top = binTop,
-                             right = profileRight,
-                             bottom = binBottom,
-                             xloc = xloc.bar_index,
-                             border_color = color.new(profileColor, 100),
-                             bgcolor = color.new(profileColor, 25))
-
-                        array.push(profileBoxes, profileBar)
+                array.push(resistanceZoneStrengthLabels, strengthLabel)
 
 
 //=============================================================================
