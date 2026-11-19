@@ -9,11 +9,11 @@
 | Type | TradingView Pine Script strategy and technical-analysis system |
 | Primary language / version | Pine Script v6 (`//@version=6`) |
 | Platform | TradingView |
-| Structure | Standalone Pine Script source under `PineScripts_Source/`, plus `.vscode/settings.json` and AI governance instructions under `AI-Governance/`. No conventional application, package, or test-project structure was found. |
+| Structure | Standalone Pine Script source under `PineScripts_Source/`, `.vscode/settings.json`, ChatGPT/Claude instructions under `AI-Governance/`, and Copilot/Phase 01 instructions under `.github/`. No conventional application, package, or Pine test-project structure was found. |
 | Current source | [`PineScripts_Source/APAS_V01 - Adaptive Price Action System.pine`](<./PineScripts_Source/APAS_V01 - Adaptive Price Action System.pine>) |
 | Source-declared version | APAS V01 (strategy title, short title, and filename). |
 
-The source has no imports or external Pine libraries. No README or Pine test project was present. At inspection, the current branch was `Develop` and the working tree had no pre-existing changes.
+The source has no imports or external Pine libraries. No README or Pine test project was present. Git branch and working-tree state are task-specific and must be inspected before each change; this document does not record a current Git status.
 
 ## Strategy objective and approved configuration
 
@@ -30,7 +30,7 @@ The approved operating configuration is:
 | Minimum setup score | 80 / 100 |
 | Risk per trade / daily loss limit | 1% / 2% |
 | News filter | Manually configured blackout windows |
-| Overnight positions | Must be closed before overnight holding |
+| Overnight controls | No new entries from 21:00; close open APAS strategy positions at 22:00, `Africa/Johannesburg` (approved requirement; not implemented or validated) |
 | Live autonomous trading | Not permitted |
 | Deployment convention | One strategy instance per currency pair |
 
@@ -57,15 +57,15 @@ These are approved requirements, not evidence that the implementation is validat
 - A separate chart-timeframe confirmed-pivot/ATR zone layer is drawn on the active chart timeframe. It can show up to four historical zones per side by default; zones extend until invalidated or expired. This display layer is distinct from the H4/H1 strategy levels.
 - The visual layer keeps each confirmed zone anchored to its original pivot candle and preserves its original price boundaries. The nearest active support and resistance zones are highlighted and pushed visually forward when price approaches them within the configured ATR buffer.
 - The approved strength is a 0–100 evidence score, not a probability: `S = 100 * active * A * (0.40*C + 0.35*R + 0.25*T)`. `C = min(distinct confirmed retests / 5, 1)`. For each reaction, support rejection distance is `close - zoneTop`; resistance rejection distance is `zoneBottom - close`. `R` is the mean of `min(rejectionDistance / ATR_on_reaction_bar, 1)`. `T = exp(-ln(2) * elapsedSinceLastReaction / (maximumZoneAgeMs / 2))`, measured from confirmed bar close to current confirmed close, or zero without a reaction. `A = max(0, 1 - elapsedZoneAgeMs / maximumZoneAgeMs)`, with zone age measured from the original pivot time. `active` is 1 only while the APAS zone is active. Invalidated/expired zones score zero.
-- Retests are confirmed post-pivot bars whose range intersects a zone and whose close is above the support top or below the resistance bottom. Consecutive touch bars form one cluster; a new retest requires a fully outside confirmed candle on the safe/approach side. Reaction evidence is limited to the configured lookback and loaded chart history.
+- Retests are confirmed post-pivot bars whose range intersects a zone and whose close is above the support top or below the resistance bottom. The first eligible bar is the first bar after pivot confirmation, and it can count as the first reaction without a preceding outside bar. Consecutive touch bars form one cluster; after a reaction, a new retest requires a fully outside confirmed candle on the safe/approach side. This applies symmetrically to support and resistance. For active zones, the scan runs from the first eligible bar through the current bar, subject to available chart history; there is no separate configurable reaction-lookback input. Zone age/expiry uses the configurable maximum zone age (30 days by default).
 - Overlapping or closely spaced active zones retain their individual pivot boundaries, stop terms, and evidence scores. Overlap is handled by preserving the original zone boxes and distinguishing the nearest active zone visually; no APAS price levels are merged or recalculated to hide valid structure.
 
 ### Risk, execution, and exits
 
 - Strategy defaults: initial capital 10,000, no pyramiding, zero commission and zero slippage. These are TradingView strategy-emulator settings, not verified broker conditions.
 - Stop candidates use the latest M15 swing with a configurable ATR buffer (default 0.10 ATR). Quantity is estimated from equity risk, stop distance, and `syminfo.pointvalue`, rounded down to a configurable quantity step (default 1,000) and capped (default 1,000,000). Risk defaults to 1% but is configurable. The source warns that point value and contract sizing require broker validation; account-currency conversion accuracy is not established.
-- Daily loss protection compares strategy equity, including unrealized P/L, with an equity baseline reset at UTC midnight. The limit defaults to 2% but is configurable; lockout is enabled by default and can close an open position at the limit. It does not implement a session-end or overnight close.
-- Take-profit choices: TP-A uses the fixed reward/risk setting (default 1:2); TP-B uses the nearest opposing H4/H1/previous-day level, falling back to the fixed target if none is found; TP-C places two 50% exits at 1R and the configured fixed reward/risk multiple (default 2R). The fixed reward/risk input is configurable, so TP-A is not unconditionally fixed at 1:2 and TP-C's second target can also differ from 2R.
+- Daily loss protection compares strategy equity, including unrealized P/L, with an equity baseline reset at UTC midnight. The limit defaults to 2% but is configurable; lockout is enabled by default and can close an open position at the limit. No 21:00 entry cutoff or scheduled 22:00 close is currently implemented; the Owner-approved overnight requirement is a separate work package.
+- Take-profit choices are labeled to reflect configurability: `TP-A: Fixed reward/risk` uses the configurable fixed reward/risk setting (default 1:2); `TP-B: Next opposing zone` uses the nearest opposing H4/H1/previous-day level, falling back to the fixed target if none is found; `TP-C: 50% at 1R / 50% at fixed R:R` places two 50% exits at 1R and the configured fixed reward/risk multiple (default 2R). TP-A is not unconditionally fixed at 1:2, and TP-C's second target can differ from 2R. For TP-C, behavior when the configured fixed reward/risk is at or below 1 remains an outstanding Owner decision; no guard or behavior change has been made.
 - `strategy.entry`/`strategy.exit` submit orders to TradingView's strategy engine. Alerts are notifications; no broker API or live-order integration is present in the source.
 
 ### Chart presentation
@@ -86,7 +86,7 @@ These are approved requirements, not evidence that the implementation is validat
 | Timeframes and score | H4/H1 and score 80 are defaults rather than locked requirements: timeframe inputs can be changed (subject to trend > setup), and the minimum score input can be changed from 1 to 100. |
 | Double-pattern validity | 30-bar expiry, minimum separation of 5 bars, and 0.25-ATR similarity are fixed in code rather than configurable. |
 | Take profit | The approved TP-A 1:2 and TP-C 2R values are defaults, not fixed, because both use a configurable fixed reward/risk input. TP-B falls back to that configurable fixed target if no opposing level exists. |
-| Overnight control | No close-before-overnight behavior exists yet. The required cutoff time and timezone are undecided. |
+| Overnight control | Owner-approved requirement: block all new APAS entries from 21:00 and close all open APAS strategy positions at 22:00 `Africa/Johannesburg`, every trading day. This is not implemented or TradingView-validated and must be handled as a separate work package. |
 | Zones | Implementation uses pivot-centered ATR zones and latest HTF zones; advanced refinement/clustering is not implemented. Chart-timeframe zones are visual and do not replace internal H4/H1 scoring zones. |
 | Proximity emphasis | Nearest active chart zones use the existing chart-zone proximity logic (`f_zoneTouch` and configured ATR buffer) for stronger visual emphasis. TradingView behavior remains unvalidated. |
 | Sizing | `syminfo.pointvalue` sizing is explicitly an approximation pending broker/contract and account-currency validation. |
@@ -94,15 +94,31 @@ These are approved requirements, not evidence that the implementation is validat
 | Live trading | Source contains TradingView strategy-emulator orders and alert notifications, not a broker integration. Live autonomous trading remains prohibited. |
 | Backtest assumptions | Commission and slippage default to zero; test results would need realistic instrument/broker settings before conclusions. Risk and daily-loss defaults match approval but can be changed through inputs. |
 
+## Claude review findings — current status
+
+| Finding | Status and treatment |
+|---|---|
+| F01 — S/R retest initial state | `armed = true` is present; first eligible bar remains `confirmBar + 1`. Source inspection and a separate transition model were performed; TradingView runtime remains unverified. |
+| F02 — HTF repainting/lookahead | Outstanding validation only; no logic changes authorized. |
+| F03 — Position sizing and margin | Broker/emulator validation outstanding; no sizing changes authorized. |
+| F04 — Signal close versus fill | Actual signal-to-fill timing must be measured and reported; no execution redesign authorized. |
+| F05 — Overnight closure | Owner decision resolved: 21:00 entry cutoff and 22:00 close in `Africa/Johannesburg`. Implementation and validation are outstanding in a separate work package. |
+| F06 — Commission and slippage | Existing settings retained; realistic simulation validation remains outstanding. |
+| F07 — CHoCH methodology | Historical evidence required before any methodology change; no changes authorized. |
+| F08 — Pullback methodology | Historical evidence required before any methodology change; no changes authorized. |
+| F09 — Correlated scoring | Historical evidence required before any score or weight change; no changes authorized. |
+| F10 — TP descriptions | Neutral configurable descriptions and corresponding comparisons are present; target calculations are unchanged. TP-C behavior at fixed R:R values at or below 1 remains an Owner decision. |
+
 ## Outstanding decisions
 
-- Define the end-of-day cutoff and timezone, then approve how and when overnight closure should execute.
+- Validate the overnight control's strategy-emulator order timing in a separate work package. If exact timing cannot be guaranteed, present the smallest safe alternative for Owner review.
 - Validate quantity step, maximum quantity, contract size, point value, and account-currency conversion for the intended broker and account.
 - Decide whether to refine supply/demand zones beyond the current pivot/ATR method.
 - Decide whether portfolio-level risk limits are required across currency pairs/instances.
 - Compare TP-A, TP-B, and TP-C on approved test data and select/retain the take-profit approach.
 - Confirm whether the approved H4/H1 timeframes, 80-point threshold, 1% trade risk, 2% daily loss cap, TP-A 1:2 and TP-C 2R should be enforced rather than user-adjustable.
 - Confirm deployment controls that ensure only one strategy instance per pair.
+- Decide TP-C behavior when `fixedRewardRisk` is at or below 1 before making any behavioral change.
 
 ## Phase 01 — Approved Decisions and Implementation Status
 
@@ -115,13 +131,17 @@ The Project Owner's approval exchange and answers are recorded below:
 
 **Implementation status:** the Pine source uses the APAS chart-timeframe pivot/ATR zone arrays as the single source for native S/R boxes and inline strength labels. The visual system is intentionally not a profile panel or histogram, and no H4/H1 or trade-strategy logic was changed.
 
+**Phase 01 priority:** Phase 01 focuses on the existing S/R zones and approved evidence formula. Do not combine unrelated methodology or execution changes with this work. F01 and F10 corrections are present in source; their status does not mean Phase 01 is complete.
+
+**F01/F10 source status:** F01 starts its scan at `confirmBar + 1` with `armed = true`, preserving the existing subsequent cluster/re-arm transitions. F10 uses the configurable TP-A/TP-C descriptions in its input options and corresponding long/short comparisons; the fixed R:R input and target calculations are unchanged.
+
 **Overlap presentation:** exact APAS boundaries and individual scores are retained. Overlapping price ranges are kept as separate zone boxes and visually prioritized by proximity to the nearest active zone. They are not merged, re-bucketed, or hidden behind a profile presentation. These are illustrative values only; no APAS calculation is merged or adjusted.
 
-**Verification status:** code inspection confirms that the native APAS S/R layer uses the same confirmed chart-timeframe zone arrays and nearest-zone boundary variables used by the analysis table. The visual layer no longer depends on a profile calculation or profile seeding. The pattern-label toggle remains accessible and labels remain gated on confirmed candles at the relevant active S/R. TradingView compilation/runtime and visual checks have not been performed; no success is claimed.
+**Verification status:** source inspection confirms the native APAS chart-timeframe zone arrays drive the boxes and inline strength labels. Zones use confirmed chart pivots, ATR-sized boundaries, original pivot timestamps for their left anchors, right extension while active, and close-break/maximum-age invalidation; overlapping zones remain separate and nearest-zone emphasis is retained. The approved strength formula and reaction transitions are present. A local source assertion and a transition model for the listed reaction sequences were executed for support and resistance; these are not Pine tests. No TradingView compilation, runtime, visual, overlap-readability, drawing-limit, or performance validation has been performed. The dynamic `chartAtr[offset]` history reference runs in the last-bar strength-label path with an offset derived from zone age/bar history; a possible history-buffer/runtime problem remains unverified.
 
 ## Phase 01 — Visual and Compilation Validation
 
-**Status:** implementation complete; visual and TradingView validation outstanding.
+**Status:** Phase 01 remains in progress; source inspection and reasoned/modelled state-transition checks do not complete the phase. TradingView validation is outstanding.
 
 Scope and acceptance criteria:
 
@@ -136,15 +156,15 @@ Scope and acceptance criteria:
 
 Do not include strategy logic, S/R calculation methodology, scoring, indicators, dependencies, or architectural changes in this phase. Record actual TradingView evidence and any unvalidated items before marking Phase 01 complete.
 
-**Remaining validation:** TradingView Pine v6 compilation, runtime behavior, M15/H1/H4 and EURUSD/GBPUSD visual checks, overlap readability, score display, candle labels, drawing limits, and performance at maximum zone age remain unverified.
+**Remaining validation:** TradingView Pine v6 compilation, runtime behavior, M15/H1/H4 and EURUSD/GBPUSD visual checks, overlap readability, score display, candle labels, drawing limits, and performance at maximum zone age remain unverified. The `chartAtr[offset]` concern must be tested at relevant chart timeframes and maximum-age settings before determining whether it reproduces.
 
 ## Development and verification status
 
-**Status: in development; not approved as complete.** The current Pine source and all three AI governance files were inspected on the clean `Develop` branch. No Pine v6 compiler result, automated tests, independent strategy-logic review, repainting/lookahead test, broker sizing validation, execution validation, visual acceptance review, or TradingView Strategy Tester report was available. Compilation and strategy behavior therefore remain unverified, including entry/exit behavior, daily loss handling, TP calculations, chart behavior across symbols/timeframes, and performance. No independent live-trading or broker validation has been performed.
+**Status: in development; Phase 01 is not complete.** F01/F10 corrections are present and have source/model checks only. There is no Pine test project or recorded Pine v6 compiler result. TradingView runtime, visual acceptance, overlap readability, drawing limits/performance, repainting/lookahead, broker sizing, execution timing, and Strategy Tester validation remain outstanding. The approved overnight control is recorded but not implemented or validated; it is a separate work package. No broker integration or live-account closure is provided by this TradingView strategy.
 
 ## Workspace documentation and governance
 
-No README was found. The workspace contains `AI-Governance/copilot-instructions.md`, `AI-Governance/CLAUDE_INSTRUCTIONS.md`, and `AI-Governance/CHATGPT_INSTRUCTIONS.md`; they establish AI roles and documentation/verification boundaries. This file is the single authoritative shared description of the APAS strategy, approved decisions, and verified implementation status.
+No README or separate Claude handoff was found. The workspace contains `.github/COPILOT_INSTRUCTIONS.md`, `.github/Prompts/PHASE_01.md`, `AI-Governance/CLAUDE_INSTRUCTIONS.md`, and `AI-Governance/CHATGPT_INSTRUCTIONS.md`; they establish AI roles and documentation/verification boundaries. This file is the authoritative shared description of APAS requirements, decisions, and verified implementation status.
 
 Approved AI responsibilities:
 

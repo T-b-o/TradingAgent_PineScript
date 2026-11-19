@@ -232,14 +232,14 @@ float maximumQuantity = input.float(
      group = GROUP_RISK)
 
 string takeProfitMode = input.string(
-     "TP-A: Fixed 1:2",
+     "TP-A: Fixed reward/risk",
      "Take-profit comparison",
      options = [
-         "TP-A: Fixed 1:2",
+         "TP-A: Fixed reward/risk",
          "TP-B: Next opposing zone",
-         "TP-C: 50% at 1R / 50% at 2R"
+         "TP-C: 50% at 1R / 50% at fixed R:R"
      ],
-     group = GROUP_RISK)
+     group = GROUP_RISK) 
 
 float fixedRewardRisk = input.float(
      2.0,
@@ -1152,7 +1152,7 @@ f_zoneStrength(
     int reactionCount = 0
     float rejectionTotal = 0.0
     int lastReactionTime = na
-    bool armed = false
+    bool armed = true
 
     if barsToScan >= 0
 
@@ -1920,12 +1920,12 @@ if longEntry
     activeTarget1 := math.round_to_mintick(
          takeProfitMode == "TP-B: Next opposing zone" ?
          zoneTarget :
-         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         takeProfitMode == "TP-C: 50% at 1R / 50% at fixed R:R" ?
          targetAtOneR :
          targetAtTwoR)
 
     activeTarget2 := math.round_to_mintick(
-         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         takeProfitMode == "TP-C: 50% at 1R / 50% at fixed R:R" ?
          targetAtTwoR :
          activeTarget1)
 
@@ -1944,7 +1944,7 @@ if longEntry
          qty = longQuantity,
          comment = activeSetupType)
 
-    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+    if activeTpMode == "TP-C: 50% at 1R / 50% at fixed R:R"
 
         strategy.exit(
              "Long TP1",
@@ -1990,12 +1990,12 @@ if shortEntry
     activeTarget1 := math.round_to_mintick(
          takeProfitMode == "TP-B: Next opposing zone" ?
          zoneTarget :
-         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         takeProfitMode == "TP-C: 50% at 1R / 50% at fixed R:R" ?
          targetAtOneR :
          targetAtTwoR)
 
     activeTarget2 := math.round_to_mintick(
-         takeProfitMode == "TP-C: 50% at 1R / 50% at 2R" ?
+         takeProfitMode == "TP-C: 50% at 1R / 50% at fixed R:R" ?
          targetAtTwoR :
          activeTarget1)
 
@@ -2014,7 +2014,7 @@ if shortEntry
          qty = shortQuantity,
          comment = activeSetupType)
 
-    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+    if activeTpMode == "TP-C: 50% at 1R / 50% at fixed R:R"
 
         strategy.exit(
              "Short TP1",
@@ -2045,7 +2045,7 @@ if shortEntry
 
 if strategy.position_size > 0 and not na(activeStop)
 
-    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+    if activeTpMode == "TP-C: 50% at 1R / 50% at fixed R:R"
 
         strategy.exit(
              "Long TP1",
@@ -2072,7 +2072,7 @@ if strategy.position_size > 0 and not na(activeStop)
 
 if strategy.position_size < 0 and not na(activeStop)
 
-    if activeTpMode == "TP-C: 50% at 1R / 50% at 2R"
+    if activeTpMode == "TP-C: 50% at 1R / 50% at fixed R:R"
 
         strategy.exit(
              "Short TP1",
